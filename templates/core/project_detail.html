@@ -1,11 +1,12 @@
 <!doctype html>
 <html lang="fr">
-<head>
-  <meta charset="utf-8" />
-  <title>{{ project.name }} – Phase 1 : Ingestion</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
-  <style>
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ project.name }} – Phase 1 : Ingestion</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1200px; background-color: #f9f9f9; }
     .grid { display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; align-items: start; }
     .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.5rem; background-color: #fff; }
@@ -24,9 +25,11 @@
 </head>
 <body>
   <p><a href="{% url 'project_list' %}">&larr; Retour aux projets</a></p>
-  <h1>{{ project.name }} — Phase 1 : Ingestion</h1>
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h1>{{ project.name }} — Phase 1 : Ingestion</h1>
+      <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="text-decoration: none;">Analyser le projet &rarr;</a>
+  </div>
   <p class="muted">Ajoutez des membres (compagnies) et définissez leur mode de données : soit via un fichier CSV détaillé, soit en se basant sur des profils de consommation/production.</p>
-
   <div class="grid">
     <div class="card">
       <h2>Ajouter un membre</h2>

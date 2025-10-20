@@ -22,5 +22,6 @@ urlpatterns = [
     # URLs for tabs in General Data section
     path("tabs/profiles/", v.profiles_tab, name="profiles_tab"),
     path("tabs/global-parameters/", v.global_parameters_tab, name="global_parameters_tab"),
+    path("projects/<int:project_id>/analysis/", v.project_analysis_page, name="project_analysis_page"),
 
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

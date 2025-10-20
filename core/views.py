@@ -11,6 +11,9 @@ from django.core.files.base import ContentFile
 import io
 from django.db import IntegrityError # Import IntegrityError
 from django.contrib import messages
+import json
+from django.http import JsonResponse
+import pandas as pd
 def project_list(request):
     projects = Project.objects.all()
     project_form = ProjectForm()
@@ -197,3 +200,183 @@ def global_parameters_tab(request):
         "gp_form": gp_form,
         "gp_list": gp_list,
     })
+
+
+def project_analysis(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    members = project.members.all()
+
+    if not members:
+        return JsonResponse({"labels": [], "datasets": []})
+
+    # On initialise un DataFrame pandas pour agréger les données
+    # 96 intervalles de 15 minutes
+    analysis_df = pd.DataFrame({
+        'production': [0.0] * 96,
+        'consumption': [0.0] * 96,
+    })
+
+    for member in members:
+        if member.data_mode == 'timeseries_csv' and member.timeseries_file:
+            # On lit le fichier CSV du membre
+            try:
+                df = pd.read_csv(member.timeseries_file.path)
+                # On s'assure que les colonnes existent
+                if 'Production' in df.columns and 'Consommation' in df.columns:
+                    # On somme les valeurs
+                    analysis_df['production'] += df['Production'].astype(float).values
+                    analysis_df['consumption'] += df['Consommation'].astype(float).values
+            except Exception as e:
+                # Gérer le cas où le CSV est mal formaté
+                print(f"Error processing file for member {member.name}: {e}")
+
+        elif member.data_mode == 'profile_based':
+            # Logique pour les membres basés sur des profils
+            total_prod = 0
+            total_cons = 0
+
+            for member_profile in member.member_profiles.all():
+                profile = member_profile.profile
+                if profile and profile.points and profile.is_valid_shape():
+                    # On récupère les points du profil (qui sont pour 1 kWh)
+                    profile_points = profile.points
+                    
+                    # On met à l'échelle avec la consommation/production annuelle du membre
+                    if member.annual_production_kwh:
+                        # Simple répartition linéaire pour l'exemple.
+                        # Vous pourriez avoir une logique plus complexe.
+                        prod_points = [p['production'] * member.annual_production_kwh for p in profile_points]
+                        total_prod += sum(prod_points)
+
+                    if member.annual_consumption_kwh:
+                        cons_points = [p['consumption'] * member.annual_consumption_kwh for p in profile_points]
+                        total_cons += sum(cons_points)
+            
+            # Ici, il faudrait répartir `total_prod` et `total_cons` sur les 96 points.
+            # Pour l'instant, on laisse cette partie pour une V2.
+
+    # On calcule le surplus/déficit
+    analysis_df['surplus'] = analysis_df['production'] - analysis_df['consumption']
+
+    # On prépare les données pour Chart.js
+    labels = [f"{i//4:02d}:{i%4*15:02d}" for i in range(96)]
+    data = {
+        'labels': labels,
+        'datasets': [
+            {
+                'label': 'Production (kWh)',
+                'data': analysis_df['production'].tolist(),
+                'borderColor': 'green',
+                'fill': False,
+            },
+            {
+                'label': 'Consommation (kWh)',
+                'data': analysis_df['consumption'].tolist(),
+                'borderColor': 'red',
+                'fill': False,
+            },
+            {
+                'label': 'Surplus (kWh)',
+                'data': analysis_df['surplus'].tolist(),
+                'borderColor': 'blue',
+                'fill': True,
+                'backgroundColor': 'rgba(0, 0, 255, 0.1)',
+            }
+        ]
+    }
+    return JsonResponse(data)
+
+
+def project_analysis_page(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    # On filtre les membres qui ont bien un fichier CSV
+    members = project.members.filter(data_mode='timeseries_csv').exclude(timeseries_file='')
+
+    if not members.exists():
+        messages.warning(request, "Aucun membre avec un fichier CSV n'a été trouvé pour l'analyse.")
+        return redirect("project_detail", project_id=project.id)
+
+    # Créer les timestamps pour l'axe X (96 intervalles de 15 min)
+    timestamps = [
+        (datetime(2000, 1, 1, 0, 0) + timedelta(minutes=15 * i)).strftime("%H:%M")
+        for i in range(96)
+    ]
+
+    # --- Préparation des données pour le graphique principal ---
+    series_data = []
+    all_dfs = {} # Utiliser un dictionnaire pour stocker les dataframes par membre
+
+    for member in members:
+        try:
+            # S'assurer que le fichier existe et n'est pas vide
+            if not member.timeseries_file:
+                continue
+
+            df = pd.read_csv(member.timeseries_file.path)
+            # Validation basique du CSV
+            if 'Production' not in df.columns or 'Consommation' not in df.columns or len(df) != 96:
+                messages.warning(request, f"Le fichier CSV pour le membre '{member.name}' est mal formaté ou incomplet (doit contenir 96 lignes et les colonnes 'Production', 'Consommation').")
+                continue
+
+            # S'assurer que les colonnes sont numériques et remplir les NaN avec 0
+            df['Production'] = pd.to_numeric(df['Production'], errors='coerce').fillna(0)
+            df['Consommation'] = pd.to_numeric(df['Consommation'], errors='coerce').fillna(0)
+
+            series_data.append({'name': f"{member.name} (Prod)", 'data': df['Production'].tolist()})
+            series_data.append({'name': f"{member.name} (Conso)", 'data': df['Consommation'].tolist()})
+            all_dfs[member.name] = df # Ajouter le df au dictionnaire
+
+        except Exception as e:
+            messages.error(request, f"Erreur lors de la lecture du fichier pour {member.name}: {e}")
+            continue
+
+    # --- Agrégation et calcul des KPIs ---
+    if not all_dfs:
+         messages.error(request, "Impossible de traiter les fichiers CSV des membres. Vérifiez leur format.")
+         return redirect("project_detail", project_id=project.id)
+
+    # Concaténer tous les dataframes valides pour l'analyse globale
+    global_df = pd.concat(all_dfs.values())
+    total_prod_series = global_df.groupby(global_df.index)['Production'].sum()
+    total_conso_series = global_df.groupby(global_df.index)['Consommation'].sum()
+
+    # Calcul du surplus/déficit global
+    surplus_series = (total_prod_series - total_conso_series).tolist()
+
+    # --- Calcul des Chiffres Clés (KPIs) ---
+    kpis = {
+        'total_production': total_prod_series.sum(),
+        'total_consumption': total_conso_series.sum(),
+        'net_surplus': sum(surplus_series),
+        'peak_production': total_prod_series.max(),
+        'peak_consumption': total_conso_series.max(),
+        'autonomy_coverage': (total_prod_series.sum() / total_conso_series.sum() * 100) if total_conso_series.sum() > 0 else 0,
+    }
+
+    # --- Données pour les graphiques circulaires ---
+    member_totals = []
+    for name, df in all_dfs.items():
+        member_totals.append({
+            'name': name,
+            'total_prod': df['Production'].sum(),
+            'total_conso': df['Consommation'].sum(),
+        })
+
+    # Trier pour obtenir les top 5
+    top_producers = sorted([m for m in member_totals if m['total_prod'] > 0], key=lambda x: x['total_prod'], reverse=True)[:5]
+    top_consumers = sorted([m for m in member_totals if m['total_conso'] > 0], key=lambda x: x['total_conso'], reverse=True)[:5]
+
+    pie_producers = {'labels': [p['name'] for p in top_producers], 'data': [p['total_prod'] for p in top_producers]}
+    pie_consumers = {'labels': [c['name'] for c in top_consumers], 'data': [c['total_conso'] for c in top_consumers]}
+
+    context = {
+        'project': project,
+        'timestamps': json.dumps(timestamps),
+        'series_data': json.dumps(series_data),
+        'surplus_series': json.dumps(surplus_series),
+        'kpis': kpis,
+        'pie_producers': json.dumps(pie_producers),
+        'pie_consumers': json.dumps(pie_consumers),
+    }
+
+    return render(request, "core/project_analysis.html", context)

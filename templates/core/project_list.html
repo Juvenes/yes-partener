@@ -34,6 +34,35 @@
       font-weight: bold; 
       border-bottom-color: #222; 
     }
+
+    /* Styles pour le zoom du graphique */
+    .graph-container {
+      position: relative;
+      display: inline-block;
+    }
+    .graph-thumbnail {
+      max-width: 100px;
+      height: auto;
+      display: block;
+    }
+    .graph-large {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 100%;
+      transform: translateY(-50%);
+      max-width: 500px;
+      height: auto;
+      border: 1px solid #ccc;
+      background-color: #fff;
+      z-index: 100;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      padding: 0.5rem;
+      border-radius: 8px;
+    }
+    .graph-container:hover .graph-large {
+      display: block;
+    }
   </style>
 </head>
 <body>
