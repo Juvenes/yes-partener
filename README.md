@@ -1,14 +1,14 @@
-Energy Synergy Project
+# Energy Synergy Project
 
-1. Project Goal
+## 1. Project Goal
 
 The primary goal of this project is to create a platform that analyzes and regroups the energy production and consumption data of multiple companies. By identifying companies that overproduce energy and those that need it, the platform aims to facilitate a local, win-win energy market. This allows producers to sell their surplus at a fair price and consumers to buy energy more affordably.
 
-2. Core Concept
+## 2. Core Concept
 
 Many companies with renewable energy sources (like solar panels or wind turbines) often produce more than they consume, while others have high energy demands. This platform aggregates data from various sources to create a holistic view of a "Project Group," which is a collection of participating companies. The core analysis reveals periods of energy surplus and deficit within the group, highlighting opportunities for direct energy exchange.
 
-3. Phase 1: Features
+## 3. Phase 1: Features
 
 Data Ingestion & Management
 
@@ -52,7 +52,7 @@ Individual Contribution: Visualizations detailing the energy usage or production
 
 Surplus/Deficit Analysis: Clear identification of time periods where the group is self-sustaining, has excess energy to sell, or needs to buy from the grid.
 
-4. Project Development Roadmap
+## 4. Project Development Roadmap
 
 [Current] Phase 1: Data Ingestion & Core Analysis:
 
