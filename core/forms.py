@@ -10,10 +10,7 @@ class MemberForm(forms.ModelForm):
     class Meta:
         model = Member
         fields = [
-            "name", "utility", "data_mode",
-            "timeseries_file",
-            "annual_consumption_kwh", "daily_consumption_kwh",
-            "annual_production_kwh", "daily_production_kwh",
+            "name", "utility", "timeseries_file",
         ]
 
 class MemberProfileForm(forms.ModelForm):
@@ -22,16 +19,16 @@ class MemberProfileForm(forms.ModelForm):
         fields = ["profile", "scale_factor"]
 
 class ProfileForm(forms.ModelForm):
+    profile_csv = forms.FileField()
+
     class Meta:
         model = Profile
-        fields = ["name", "kind", "points", "version", "is_active"]
-        widgets = {
-            "points": forms.Textarea(attrs={"rows": 6, "placeholder": "96 valeurs séparées par des virgules ou JSON"}),
-        }
+        fields = ["name", "profile_csv"]
+
 class GlobalParameterForm(forms.ModelForm):
     class Meta:
         model = GlobalParameter
         fields = ["key", "value", "note"]
         widgets = {
-            "note": forms.TextInput(attrs={"placeholder": "Description (optionnel)"}),
+            "note": forms.TextInput(attrs={"placeholder": "Description (optional)"}),
         }

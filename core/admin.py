@@ -12,14 +12,14 @@ class ProjectAdmin(admin.ModelAdmin):
 
 @admin.register(Member)
 class MemberAdmin(admin.ModelAdmin):
-    list_display = ("name", "project", "data_mode")
-    list_filter = ("project", "data_mode")
+    list_display = ("name", "project")
+    list_filter = ("project",)
     inlines = [MemberProfileInline]
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ("name", "kind", "version", "is_active")
-    list_filter = ("kind", "is_active")
+    list_display = ("name", "version", "is_active")
+    list_filter = ("is_active",)
     search_fields = ("name",)
 
 @admin.register(GlobalParameter)

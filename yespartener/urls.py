@@ -1,7 +1,8 @@
 from django.contrib import admin
 from django.urls import path
 from core import views as v
-
+from django.conf import settings
+from django.conf.urls.static import static
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", v.project_list, name="project_list"),
@@ -16,4 +17,4 @@ urlpatterns = [
 
     # CSV template
     path("download/timeseries-template.csv", v.csv_template_timeseries, name="csv_template_timeseries"),
-]
+]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
