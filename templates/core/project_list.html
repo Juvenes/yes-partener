@@ -1,256 +1,97 @@
-{% load static %}
 <!doctype html>
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <title>Projects & Global Data</title>
+  <title>MobiWAN – Gestion des projets</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
-  <link rel="icon" href="{% static 'favicon.ico' %}">
   <style>
-    :root {
-      --primary-color: #007bff;
-      --secondary-color: #6c757d;
-      --background-color: #f8f9fa;
-      --text-color: #343a40;
-      --card-bg: #ffffff;
-      --border-color: #dee2e6;
-      --shadow: 0 4px 6px rgba(0,0,0,0.1);
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1000px }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .input, select { padding: .5rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; }
+    .btn { padding: .55rem .9rem; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; cursor: pointer; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #eee; padding: .4rem .2rem; text-align: left; }
+    .muted { color: #666; font-size: .95rem; }
+    code { background: #f5f5f5; padding: .15rem .3rem; border-radius: 4px; }
+    
+    /* Styles pour les onglets */
+    .tabs { display: flex; border-bottom: 1px solid #ccc; margin-bottom: 1rem; }
+    .tab-button { 
+      padding: 0.75rem 1.25rem; 
+      border: none; 
+      background: none; 
+      cursor: pointer; 
+      font-size: 1rem; 
+      color: #555; 
+      border-bottom: 3px solid transparent;
+      margin-bottom: -1px; /* Overlap border-bottom of tabs */
     }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      margin: 0;
-      background-color: var(--background-color);
-      color: var(--text-color);
-    }
-    .container {
-      max-width: 1200px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-    }
-    .tabs {
-      display: flex;
-      border-bottom: 2px solid var(--border-color);
-    }
-    .tab-button {
-      padding: 1rem 1.5rem;
-      cursor: pointer;
-      border: none;
-      background: none;
-      font-size: 1rem;
-      font-weight: 500;
-      color: var(--secondary-color);
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s ease-in-out;
-    }
-    .tab-button.active {
-      color: var(--primary-color);
-      border-bottom-color: var(--primary-color);
-    }
-    .tab-content {
-      display: none;
-      padding-top: 2rem;
-    }
-    .tab-content.active {
-      display: block;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-      gap: 2rem;
-    }
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 1.5rem;
-      box-shadow: var(--shadow);
-    }
-    .card h2 {
-        margin-top: 0;
-    }
-    .form-group {
-        margin-bottom: 1rem;
-    }
-    .input, select, textarea {
-      padding: .75rem;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      width: 100%;
-      box-sizing: border-box;
-    }
-    .btn {
-      padding: .75rem 1.5rem;
-      border-radius: 8px;
-      border: none;
-      background: var(--primary-color);
-      color: #fff;
-      cursor: pointer;
-      font-weight: 500;
-    }
-    table {
-      width:100%;
-      border-collapse: collapse;
-      margin-top: 1rem;
-    }
-    th, td {
-      border-bottom: 1px solid var(--border-color);
-      padding: .75rem;
-      text-align: left;
-    }
-    th {
-        font-weight: 600;
-    }
-    a {
-      color: var(--primary-color);
-      text-decoration: none;
-    }
-    .muted {
-      color: var(--secondary-color);
-      font-size:.9rem;
-    }
-    .project-card {
-        padding: 1rem;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        margin-bottom: 1rem;
-        transition: box-shadow 0.2s;
-    }
-    .project-card:hover {
-        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    .tab-button.active { 
+      color: #222; 
+      font-weight: bold; 
+      border-bottom-color: #222; 
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Energy Synergy Project</h1>
-    <div class="tabs">
-      <button class="tab-button active" onclick="openTab(event, 'projects')">Projects</button>
-      <button class="tab-button" onclick="openTab(event, 'general-data')">General Data</button>
+  <h1>MobiWAN – Gestion des projets</h1>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Créer un nouveau projet</h2>
+      <form method="post" action="{% url 'project_create' %}">
+        {% csrf_token %}
+        <label>Nom du projet</label>
+        <input class="input" type="text" name="name" required>
+        <button class="btn" type="submit" style="margin-top:.75rem">Créer</button>
+      </form>
     </div>
 
-    <div id="projects" class="tab-content active">
-        <div class="grid">
-            <div class="card">
-                <h2>Create a new project</h2>
-                <form method="post" action="{% url 'project_create' %}">
-                    {% csrf_token %}
-                    <div class="form-group">
-                        <input class="input" type="text" name="name" placeholder="Project name" required>
-                    </div>
-                    <button class="btn" type="submit">Create Project</button>
-                </form>
-            </div>
-            <div class="card">
-                <h2>Existing Projects</h2>
-                {% for p in projects %}
-                    <a href="{% url 'project_detail' p.id %}">
-                        <div class="project-card">
-                            <h3 style="margin:0">{{ p.name }}</h3>
-                            <div class="muted">Current phase: {{ p.phase }}</div>
-                        </div>
-                    </a>
-                {% empty %}
-                    <p class="muted">No projects have been created yet.</p>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
-
-    <div id="general-data" class="tab-content">
-        <div class="grid">
-            <div class="card">
-                <h2>Manage Profiles</h2>
-                <form method="post" action="{% url 'profile_create' %}" enctype="multipart/form-data">
-                    {% csrf_token %}
-                    <div class="form-group">
-                        <label>Profile Name</label>
-                        <input class="input" name="name" placeholder="e.g., Office Building" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Profile CSV File</label>
-                        <input class="input" type="file" name="profile_csv" accept=".csv" required>
-                    </div>
-                    <button class="btn" type="submit">Upload Profile</button>
-                </form>
-                <hr style="margin: 2rem 0;">
-                <h3>Active Profiles</h3>
-                {% if profiles %}
-                    <table>
-                        <thead><tr><th>Name</th><th>Version</th><th>Graph</th></tr></thead>
-                        <tbody>
-                            {% for pr in profiles %}
-                            <tr>
-                                <td>{{ pr.name }}</td>
-                                <td>{{ pr.version }}</td>
-                                <td>
-                                    {% if pr.graph %}
-                                    <img src="{{ pr.graph.url }}" alt="Profile graph for {{ pr.name }}" width="150">
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p class="muted">No active profiles.</p>
-                {% endif %}
-            </div>
-            <div class="card">
-                <h2>Global Parameters</h2>
-                <form method="post" action="{% url 'global_parameter_create' %}">
-                    {% csrf_token %}
-                    <div class="form-group">
-                        <label>Parameter Key</label>
-                        <input class="input" name="key" placeholder="e.g., currency" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Parameter Value (JSON)</label>
-                        <textarea class="input" name="value" rows="3" placeholder='{"currency": "EUR"}'></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Description</label>
-                        <input class="input" name="note" placeholder="Optional note">
-                    </div>
-                    <button class="btn" type="submit">Save Parameter</button>
-                </form>
-                 <hr style="margin: 2rem 0;">
-                <h3>Existing Parameters</h3>
-                {% if gp_list %}
-                    <table>
-                        <thead><tr><th>Key</th><th>Value</th><th>Last Updated</th></tr></thead>
-                        <tbody>
-                            {% for g in gp_list %}
-                            <tr><td>{{ g.key }}</td><td><pre style="margin:0">{{ g.value|default:"" }}</pre></td><td class="muted">{{ g.updated_at|date:"Y-m-d H:i" }}</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% endif %}
-                 <hr style="margin: 2rem 0;">
-                <a href="{% url 'csv_template_timeseries' %}">Download CSV Template</a>
-            </div>
-        </div>
+    <div class="card">
+      <h2>Projets existants</h2>
+      <table>
+        <thead>
+          <tr><th>Nom</th><th>Phase</th><th>Créé le</th></tr>
+        </thead>
+        <tbody>
+          {% for p in projects %}
+            <tr>
+              <td><a href="{% url 'project_detail' p.id %}">{{ p.name }}</a></td>
+              <td>{{ p.phase }}</td>
+              <td>{{ p.created_at|date:"d M Y" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3" class="muted">Aucun projet pour l’instant.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
 
-  <script>
-    function openTab(evt, tabName) {
-      var i, tabcontent, tablinks;
-      tabcontent = document.getElementsByClassName("tab-content");
-      for (i = 0; i < tabcontent.length; i++) {
-        tabcontent[i].style.display = "none";
-      }
-      tablinks = document.getElementsByClassName("tab-button");
-      for (i = 0; i < tablinks.length; i++) {
-        tablinks[i].classList.remove("active");
-      }
-      document.getElementById(tabName).style.display = "block";
-      evt.currentTarget.classList.add("active");
-    }
-    // Ensure the first tab is active on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        document.querySelector('.tab-button').click();
-    });
-  </script>
+  <h2 style="margin-top:2rem">Données Générales</h2>
+  <div class="card">
+    <div class="tabs">
+      <button class="tab-button active" 
+              hx-get="{% url 'profiles_tab' %}" 
+              hx-target="#tab-content" 
+              hx-swap="innerHTML" 
+              hx-indicator="#tab-spinner"
+              onclick="this.parentNode.querySelectorAll('.active').forEach(e => e.classList.remove('active')); this.classList.add('active');"
+      >Profils</button>
+      <button class="tab-button" 
+              hx-get="{% url 'global_parameters_tab' %}" 
+              hx-target="#tab-content" 
+              hx-swap="innerHTML" 
+              hx-indicator="#tab-spinner"
+              onclick="this.parentNode.querySelectorAll('.active').forEach(e => e.classList.remove('active')); this.classList.add('active');"
+      >Paramètres Globaux</button>
+      </div>
+    <div id="tab-content" hx-trigger="load" hx-get="{% url 'profiles_tab' %}" hx-swap="innerHTML">
+        </div>
+    <div id="tab-spinner" class="htmx-indicator" style="display:none; text-align:center; padding:1rem;">Chargement...</div>
+  </div>
 </body>
 </html>

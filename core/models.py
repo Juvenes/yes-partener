@@ -33,12 +33,24 @@ class Project(models.Model):
         return self.name
 
 class Member(models.Model):
+    DATA_MODE_CHOICES = [
+        ("timeseries_csv", "Série 15-min via CSV"),
+        ("profile_based", "Basé sur profil(s)"),
+    ]
+
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="members", null=True, blank=True)
     name = models.CharField("Name", max_length=200)
     utility = models.CharField("Utility", max_length=200, blank=True)
-    # Expected CSV: Time,Production,Consumption; Time = HH:MM with a 15 min interval
+    
+    data_mode = models.CharField(max_length=20, choices=DATA_MODE_CHOICES, default="timeseries_csv")
+
+    # Mode: timeseries_csv
     timeseries_file = models.FileField(upload_to="timeseries/", blank=True, null=True)
 
+    # Mode: profile_based
+    annual_consumption_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
+    annual_production_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
+    
     class Meta:
         unique_together = ("project", "name")
         ordering = ["name"]
@@ -47,12 +59,9 @@ class Member(models.Model):
         return f"{self.name} ({self.project.name})"
 
 class MemberProfile(models.Model):
-    """N:N link between Member and Profile (a member can have multiple profiles).
-    scale_factor is optional (e.g. to weight multiple profiles within the same member).
-    """
+    """Lien N:N entre Membre et Profil (un membre peut avoir plusieurs profils)."""
     member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="member_profiles")
     profile = models.ForeignKey(Profile, on_delete=models.PROTECT, related_name="member_profiles")
-    scale_factor = models.FloatField(default=1.0, validators=[MinValueValidator(0.0)])
 
     class Meta:
         unique_together = ("member", "profile")

@@ -9,7 +9,8 @@ import json
 import matplotlib.pyplot as plt
 from django.core.files.base import ContentFile
 import io
-
+from django.db import IntegrityError # Import IntegrityError
+from django.contrib import messages
 def project_list(request):
     projects = Project.objects.all()
     project_form = ProjectForm()
@@ -67,24 +68,50 @@ def member_create(request, project_id):
     if form.is_valid():
         m = form.save(commit=False)
         m.project = project
-        if not m.timeseries_file:
-            return HttpResponseBadRequest("CSV file is required.")
+
+        if m.data_mode == 'timeseries_csv' and not m.timeseries_file:
+            return HttpResponseBadRequest("Pour le mode 'Série 15-min via CSV', un fichier CSV est requis.")
+        
+        if m.data_mode == 'profile_based' and not (m.annual_consumption_kwh or m.annual_production_kwh):
+             return HttpResponseBadRequest("Pour le mode 'Basé sur profil(s)', veuillez fournir au moins une valeur de consommation ou de production annuelle.")
+
         m.save()
         return redirect("project_detail", project_id=project.id)
-    return HttpResponseBadRequest("Invalid member")
+    
+    return HttpResponseBadRequest(f"Formulaire invalide : {form.errors.as_json()}")
+
 
 @require_http_methods(["POST"])
 def member_profile_add(request, project_id, member_id):
     member = get_object_or_404(Member, pk=member_id, project_id=project_id)
+    
+    if member.data_mode != 'profile_based':
+        messages.error(request, "Les profils ne peuvent être ajoutés qu'aux membres en mode 'Basé sur profil(s)'.")
+        return redirect("project_detail", project_id=member.project.id)
+
     form = MemberProfileForm(request.POST)
     if form.is_valid():
         mp = form.save(commit=False)
         mp.member = member
+        
         if not mp.profile.is_active:
-            return HttpResponseBadRequest("Inactive profile.")
-        mp.save()
-        return redirect("project_detail", project_id=project.id)
-    return HttpResponseBadRequest("Invalid member-profile link")
+            messages.warning(request, "Impossible d'ajouter un profil inactif.")
+            return redirect("project_detail", project_id=member.project.id)
+            
+        # --- LA CORRECTION EST ICI ---
+        # On vérifie si l'association existe déjà avant de la créer
+        if MemberProfile.objects.filter(member=member, profile=mp.profile).exists():
+            messages.info(request, f"Le profil '{mp.profile.name}' est déjà associé à ce membre.")
+        else:
+            mp.save()
+            messages.success(request, f"Le profil '{mp.profile.name}' a été ajouté avec succès.")
+        
+        return redirect("project_detail", project_id=member.project.id)
+        
+    else:
+        # Si le formulaire n'est pas valide (par exemple, aucun profil sélectionné)
+        messages.error(request, "Veuillez sélectionner un profil valide.")
+        return redirect("project_detail", project_id=project_id)
 
 @require_http_methods(["POST"])
 def profile_create(request):
@@ -151,3 +178,22 @@ def csv_template_timeseries(request):
         writer.writerow([t.strftime("%H:%M"), "", ""])
         t += step
     return response
+
+
+def profiles_tab(request):
+    """View to render the profiles tab content."""
+    profiles = Profile.objects.filter(is_active=True).order_by("name")
+    profile_form = ProfileForm()
+    return render(request, "core/tabs/profiles_tab.html", {
+        "profiles": profiles,
+        "profile_form": profile_form,
+    })
+
+def global_parameters_tab(request):
+    """View to render the global parameters tab content."""
+    gp_form = GlobalParameterForm()
+    gp_list = GlobalParameter.objects.all()
+    return render(request, "core/tabs/global_parameters_tab.html", {
+        "gp_form": gp_form,
+        "gp_list": gp_list,
+    })

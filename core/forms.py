@@ -10,13 +10,14 @@ class MemberForm(forms.ModelForm):
     class Meta:
         model = Member
         fields = [
-            "name", "utility", "timeseries_file",
+            "name", "utility", "data_mode", "timeseries_file", 
+            "annual_consumption_kwh", "annual_production_kwh"
         ]
 
 class MemberProfileForm(forms.ModelForm):
     class Meta:
         model = MemberProfile
-        fields = ["profile", "scale_factor"]
+        fields = ["profile"]
 
 class ProfileForm(forms.ModelForm):
     profile_csv = forms.FileField()

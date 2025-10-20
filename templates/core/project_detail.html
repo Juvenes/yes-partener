@@ -6,22 +6,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1000px }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; }
-    .row { display: flex; gap: .5rem; flex-wrap: wrap; }
-    .input, select { padding: .5rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; }
-    .btn { padding: .55rem .9rem; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; cursor: pointer; }
-    table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom: 1px solid #eee; padding: .4rem .2rem; text-align: left; }
-    .muted { color: #666; font-size: .95rem; }
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1200px; background-color: #f9f9f9; }
+    .grid { display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; align-items: start; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.5rem; background-color: #fff; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    .input, select { padding: .75rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; box-sizing: border-box; font-size: 1rem; }
+    .btn { padding: .75rem 1.25rem; border-radius: 8px; border: none; background: #222; color: #fff; cursor: pointer; font-size: 1rem; }
+    table { width:100%; border-collapse: collapse; font-size: 1.05rem; }
+    th, td { border-bottom: 1px solid #eee; padding: 1rem .5rem; text-align: left; vertical-align: top; }
+    th { font-weight: 600; color: #555; }
+    .muted { color: #666; font-size: .9rem; }
     code { background: #f5f5f5; padding: .15rem .3rem; border-radius: 4px; }
+    
+    .profile-tag-list { list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .profile-tag { background-color: #eef; color: #44b; padding: 0.25rem 0.75rem; border-radius: 16px; font-size: 0.9rem; font-weight: 500; }
   </style>
 </head>
 <body>
-  <p><a href="{% url 'project_list' %}">&larr; Retour</a></p>
+  <p><a href="{% url 'project_list' %}">&larr; Retour aux projets</a></p>
   <h1>{{ project.name }} — Phase 1 : Ingestion</h1>
-  <p class="muted">Ajoute des membres (compagnies). Choisis leur mode de données : <em>CSV 15-min</em> ou <em>Profil(s) + total</em>.</p>
+  <p class="muted">Ajoutez des membres (compagnies) et définissez leur mode de données : soit via un fichier CSV détaillé, soit en se basant sur des profils de consommation/production.</p>
 
   <div class="grid">
     <div class="card">
@@ -41,64 +45,84 @@
         </select>
 
         <div id="csv_fields">
-          <label style="margin-top:.5rem">CSV (Time,Production,Consommation)</label>
+          <label style="margin-top:.5rem">Fichier CSV (Time,Production,Consommation)</label>
           <input class="input" type="file" name="timeseries_file" accept=".csv">
-          <p class="muted">Exemple : <code>00:00,1.837388,0</code> ; <code>00:15,2.233,0</code> ; …</p>
         </div>
 
         <div id="profile_fields" style="display:none">
-          <p class="muted" style="margin-top:.5rem">Tu pourras lier un ou plusieurs profils juste après création.</p>
-          <label>Total conso jour (kWh)</label>
-          <input class="input" step="0.0001" min="0" type="number" name="daily_consumption_kwh" placeholder="optionnel">
-          <label>Total conso année (kWh)</label>
-          <input class="input" step="0.0001" min="0" type="number" name="annual_consumption_kwh" placeholder="optionnel">
+          <p class="muted" style="margin-top:.5rem">Vous associerez les profils juste après la création du membre.</p>
+          <label>Total conso. annuelle (kWh)</label>
+          <input class="input" step="0.01" min="0" type="number" name="annual_consumption_kwh" placeholder="Optionnel">
 
-          <label>Total prod jour (kWh)</label>
-          <input class="input" step="0.0001" min="0" type="number" name="daily_production_kwh" placeholder="optionnel">
-          <label>Total prod année (kWh)</label>
-          <input class="input" step="0.0001" min="0" type="number" name="annual_production_kwh" placeholder="optionnel">
+          <label>Total prod. annuelle (kWh)</label>
+          <input class="input" step="0.01" min="0" type="number" name="annual_production_kwh" placeholder="Optionnel">
         </div>
 
-        <button class="btn" type="submit" style="margin-top:.75rem">Créer le membre</button>
+        <button class="btn" type="submit" style="margin-top:1rem; width: 100%;">Créer le membre</button>
       </form>
     </div>
 
-  <div class="card" style="margin-top:1rem">
-    <h2>Membres du projet</h2>
-    <table>
-      <thead>
-        <tr><th>Nom</th><th>Mode</th><th>Profils</th><th>Actions</th></tr>
-      </thead>
-      <tbody>
-        {% for m in members %}
-          <tr>
-            <td><strong>{{ m.name }}</strong><br><span class="muted">{{ m.utility }}</span></td>
-            <td>{{ m.get_data_mode_display }}</td>
-            <td>
-              {% for mp in m.member_profiles.all %}
-                <div>{{ mp.profile.name }} [{{ mp.profile.kind }}] × {{ mp.scale_factor }}</div>
-              {% empty %}
-                <span class="muted">—</span>
-              {% endfor %}
-            </td>
-            <td>
-              <form method="post" action="{% url 'member_profile_add' project.id m.id %}" class="row">
-                {% csrf_token %}
-                <select name="profile" class="input" required>
-                  {% for p in profiles %}
-                    <option value="{{ p.id }}">{{ p.name }} [{{ p.kind }}]</option>
-                  {% endfor %}
-                </select>
-                <input class="input" name="scale_factor" type="number" step="0.0001" value="1.0">
-                <button class="btn" type="submit">Ajouter profil</button>
-              </form>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="4" class="muted">Aucun membre pour l’instant.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="card">
+      <h2>Membres du projet</h2>
+      <table>
+        <thead>
+          <tr><th>Nom</th><th>Mode</th><th>Détails</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for m in members %}
+            <tr>
+              <td>
+                <strong>{{ m.name }}</strong><br>
+                {% if m.utility %}<span class="muted">{{ m.utility }}</span>{% endif %}
+              </td>
+              <td>{{ m.get_data_mode_display }}</td>
+              <td>
+                {% if m.data_mode == 'timeseries_csv' %}
+                  {% if m.timeseries_file %}
+                    <a href="{{ m.timeseries_file.url }}">Télécharger le fichier CSV</a>
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
+                {% else %} {# profile_based #}
+                  {% if m.annual_consumption_kwh or m.annual_production_kwh %}
+                      {% if m.annual_consumption_kwh %}
+                        Consommation: <strong>{{ m.annual_consumption_kwh|floatformat:"0" }} kWh/an</strong><br>
+                      {% endif %}
+                      {% if m.annual_production_kwh %}
+                        Production: <strong>{{ m.annual_production_kwh|floatformat:"0" }} kWh/an</strong>
+                      {% endif %}
+                  {% endif %}
+                  
+                  {% if m.member_profiles.exists %}
+                    <ul class="profile-tag-list">
+                      {% for mp in m.member_profiles.all %}
+                        <li class="profile-tag">{{ mp.profile.name }}</li>
+                      {% endfor %}
+                    </ul>
+                  {% endif %}
+                {% endif %}
+              </td>
+              <td>
+                {% if m.data_mode == 'profile_based' %}
+                  <form method="post" action="{% url 'member_profile_add' project.id m.id %}" class="row">
+                    {% csrf_token %}
+                    <select name="profile" class="input" required style="flex-grow: 1;">
+                      <option value="" disabled selected>Choisir un profil...</option>
+                      {% for p in profiles %}
+                        <option value="{{ p.id }}">{{ p.name }}</option>
+                      {% endfor %}
+                    </select>
+                    <button class="btn" type="submit">Ajouter</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="muted" style="text-align: center; padding: 2rem;">Aucun membre pour l’instant.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <script>
@@ -107,11 +131,11 @@
     const profFields = document.getElementById('profile_fields');
     function toggle() {
       if (modeSel.value === 'profile_based') {
-        profFields.style.display = '';
+        profFields.style.display = 'block';
         csvFields.style.display = 'none';
       } else {
         profFields.style.display = 'none';
-        csvFields.style.display = '';
+        csvFields.style.display = 'block';
       }
     }
     modeSel.addEventListener('change', toggle);

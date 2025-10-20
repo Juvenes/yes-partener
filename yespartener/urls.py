@@ -3,6 +3,7 @@ from django.urls import path
 from core import views as v
 from django.conf import settings
 from django.conf.urls.static import static
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", v.project_list, name="project_list"),
@@ -17,4 +18,9 @@ urlpatterns = [
 
     # CSV template
     path("download/timeseries-template.csv", v.csv_template_timeseries, name="csv_template_timeseries"),
+    
+    # URLs for tabs in General Data section
+    path("tabs/profiles/", v.profiles_tab, name="profiles_tab"),
+    path("tabs/global-parameters/", v.global_parameters_tab, name="global_parameters_tab"),
+
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
