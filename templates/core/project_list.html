@@ -1,0 +1,108 @@
+{% load static %}
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Projets & Données globales</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <link rel="icon" href="{% static 'favicon.ico' %}">
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1100px }
+    .grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 1rem; align-items: start; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .input, select, textarea { padding: .5rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; }
+    .btn { padding: .55rem .9rem; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; cursor: pointer; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #eee; padding: .4rem .2rem; text-align: left; }
+    a { color: #0a58ca; text-decoration: none; }
+    .muted { color:#666; font-size:.95rem }
+  </style>
+</head>
+<body>
+  <h1>Projets</h1>
+  <div class="grid">
+    <div class="card">
+      <h2>Créer un projet</h2>
+      <form method="post" action="{% url 'project_create' %}" class="row">
+        {% csrf_token %}
+        <input class="input" type="text" name="name" placeholder="Nom du projet" required>
+        <button class="btn" type="submit">Créer</button>
+      </form>
+
+      <h2 style="margin-top:1rem">Liste</h2>
+      {% for p in projects %}
+        <div class="card" style="margin:.5rem 0">
+          <h3 style="margin:0"><a href="{% url 'project_detail' p.id %}">{{ p.name }}</a></h3>
+          <div class="muted">Phase actuelle : {{ p.phase }}</div>
+        </div>
+      {% empty %}
+        <p class="muted">Aucun projet pour l’instant.</p>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <h2>Données globales (partagées)</h2>
+
+      <h3 style="margin-top:.5rem">Profils</h3>
+      <form method="post" action="{% url 'profile_create' %}">
+        {% csrf_token %}
+        <div class="row">
+          <input class="input" name="name" placeholder="Nom (ex: Office)" required>
+          <select class="input" name="kind" required>
+            <option value="consumption">Consommation</option>
+            <option value="production">Production</option>
+          </select>
+        </div>
+        <label style="margin-top:.5rem">Points (96 valeurs)</label>
+        <textarea class="input" name="points" rows="6" placeholder="[0.0104167, ...]" required></textarea>
+        <div class="row" style="margin-top:.5rem">
+          <input class="input" name="version" type="number" min="1" value="1">
+          <label style="display:flex; align-items:center; gap:.5rem">
+            <input type="checkbox" name="is_active" checked> Actif
+          </label>
+        </div>
+        <button class="btn" type="submit" style="margin-top:.5rem">Créer le profil</button>
+      </form>
+
+      {% if profiles %}
+        <table style="margin-top:.75rem">
+          <thead><tr><th>Nom</th><th>Type</th><th>v</th></tr></thead>
+          <tbody>
+            {% for pr in profiles %}
+              <tr><td>{{ pr.name }}</td><td>{{ pr.kind }}</td><td>{{ pr.version }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">Aucun profil actif.</p>
+      {% endif %}
+
+      <h3 style="margin-top:1rem">Paramètres globaux</h3>
+      <form method="post" action="{% url 'global_parameter_create' %}">
+        {% csrf_token %}
+        <input class="input" name="key" placeholder="Clé (ex: currency)" required>
+        <textarea class="input" name="value" rows="3" placeholder='JSON (ex: {"currency":"EUR"})'></textarea>
+        <input class="input" name="note" placeholder="Description (optionnel)">
+        <button class="btn" type="submit" style="margin-top:.5rem">Enregistrer</button>
+      </form>
+
+      {% if gp_list %}
+        <table style="margin-top:.75rem">
+          <thead><tr><th>Clé</th><th>Valeur</th><th>MAJ</th></tr></thead>
+          <tbody>
+            {% for g in gp_list %}
+              <tr><td>{{ g.key }}</td><td><pre style="margin:0">{{ g.value|default:"" }}</pre></td><td class="muted">{{ g.updated_at }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      <div style="margin-top:1rem">
+        <a href="{% url 'csv_template_timeseries' %}">Télécharger le CSV modèle (96 × 15 min)</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Groupes & Membres</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    .container { max-width: 900px; margin: 0 auto; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; margin: 0.75rem 0; }
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .input { padding: 0.5rem; border: 1px solid #ccc; border-radius: 8px; }
+    .btn { padding: 0.55rem 0.9rem; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; cursor: pointer; }
+    .btn.secondary { background: #f8f8f8; color: #333; border-color: #ccc; }
+    .muted { color: #666; font-size: 0.95rem; }
+    ul { margin: 0.5rem 0 0 1rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Groupes & Membres</h1>
+    <p class="muted">Crée des groupes puis ajoute des membres (nom + utilité). Tout se passe ici.</p>
+
+    <!-- Formulaire création groupe -->
+    <form class="row" hx-post="{% url 'create_group' %}" hx-target="#group-list" hx-swap="outerHTML">
+        {% csrf_token %}
+        {{ group_form.name }}
+        <button class="btn" type="submit">Créer le groupe</button>
+      </form>
+
+    <!-- Liste des groupes (contenu swappé par HTMX) -->
+    <div id="group-list">
+      {% include "core/partials/group_list.html" with groups=groups %}
+    </div>
+  </div>
+</body>
+</html>

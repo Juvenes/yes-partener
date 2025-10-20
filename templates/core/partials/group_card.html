@@ -1,0 +1,21 @@
+<div class="card" id="group-{{ g.id }}">
+    <h2 style="margin:0 0 0.25rem 0">{{ g.name }}</h2>
+    {% if g.members.all %}
+      <ul>
+        {% for m in g.members.all %}
+          <li><strong>{{ m.name }}</strong>{% if m.utility %} — <span class="muted">{{ m.utility }}</span>{% endif %}</li>
+        {% empty %}
+          <li class="muted">Aucun membre pour l’instant.</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  
+    <!-- Formulaire d’ajout membre (spécifique à ce groupe) -->
+    <form class="row" hx-post="{% url 'add_member' g.id %}" hx-target="#group-{{ g.id }}" hx-swap="outerHTML" style="margin-top:0.5rem">
+        {% csrf_token %}
+        <input type="text" name="name" placeholder="Nom du membre" class="input" required />
+        <input type="text" name="utility" placeholder="Utilité (optionnel)" class="input" />
+        <button class="btn secondary" type="submit">Ajouter membre</button>
+      </form>
+  </div>
+  

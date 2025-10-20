@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ project.name }} – Phase 1 : Ingestion</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1000px }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .input, select { padding: .5rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; }
+    .btn { padding: .55rem .9rem; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; cursor: pointer; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #eee; padding: .4rem .2rem; text-align: left; }
+    .muted { color: #666; font-size: .95rem; }
+    code { background: #f5f5f5; padding: .15rem .3rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <p><a href="{% url 'project_list' %}">&larr; Retour</a></p>
+  <h1>{{ project.name }} — Phase 1 : Ingestion</h1>
+  <p class="muted">Ajoute des membres (compagnies). Choisis leur mode de données : <em>CSV 15-min</em> ou <em>Profil(s) + total</em>.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Ajouter un membre</h2>
+      <form method="post" action="{% url 'member_create' project.id %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label>Nom</label>
+        <input class="input" type="text" name="name" required>
+
+        <label style="margin-top:.5rem">Utilité (optionnel)</label>
+        <input class="input" type="text" name="utility" placeholder="Bureau, magasin, serveur…">
+
+        <label style="margin-top:.5rem">Mode de données</label>
+        <select name="data_mode" class="input" id="data_mode">
+          <option value="timeseries_csv">Série 15-min via CSV</option>
+          <option value="profile_based">Basé sur profil(s)</option>
+        </select>
+
+        <div id="csv_fields">
+          <label style="margin-top:.5rem">CSV (Time,Production,Consommation)</label>
+          <input class="input" type="file" name="timeseries_file" accept=".csv">
+          <p class="muted">Exemple : <code>00:00,1.837388,0</code> ; <code>00:15,2.233,0</code> ; …</p>
+        </div>
+
+        <div id="profile_fields" style="display:none">
+          <p class="muted" style="margin-top:.5rem">Tu pourras lier un ou plusieurs profils juste après création.</p>
+          <label>Total conso jour (kWh)</label>
+          <input class="input" step="0.0001" min="0" type="number" name="daily_consumption_kwh" placeholder="optionnel">
+          <label>Total conso année (kWh)</label>
+          <input class="input" step="0.0001" min="0" type="number" name="annual_consumption_kwh" placeholder="optionnel">
+
+          <label>Total prod jour (kWh)</label>
+          <input class="input" step="0.0001" min="0" type="number" name="daily_production_kwh" placeholder="optionnel">
+          <label>Total prod année (kWh)</label>
+          <input class="input" step="0.0001" min="0" type="number" name="annual_production_kwh" placeholder="optionnel">
+        </div>
+
+        <button class="btn" type="submit" style="margin-top:.75rem">Créer le membre</button>
+      </form>
+    </div>
+
+  <div class="card" style="margin-top:1rem">
+    <h2>Membres du projet</h2>
+    <table>
+      <thead>
+        <tr><th>Nom</th><th>Mode</th><th>Profils</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for m in members %}
+          <tr>
+            <td><strong>{{ m.name }}</strong><br><span class="muted">{{ m.utility }}</span></td>
+            <td>{{ m.get_data_mode_display }}</td>
+            <td>
+              {% for mp in m.member_profiles.all %}
+                <div>{{ mp.profile.name }} [{{ mp.profile.kind }}] × {{ mp.scale_factor }}</div>
+              {% empty %}
+                <span class="muted">—</span>
+              {% endfor %}
+            </td>
+            <td>
+              <form method="post" action="{% url 'member_profile_add' project.id m.id %}" class="row">
+                {% csrf_token %}
+                <select name="profile" class="input" required>
+                  {% for p in profiles %}
+                    <option value="{{ p.id }}">{{ p.name }} [{{ p.kind }}]</option>
+                  {% endfor %}
+                </select>
+                <input class="input" name="scale_factor" type="number" step="0.0001" value="1.0">
+                <button class="btn" type="submit">Ajouter profil</button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="muted">Aucun membre pour l’instant.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const modeSel = document.getElementById('data_mode');
+    const csvFields = document.getElementById('csv_fields');
+    const profFields = document.getElementById('profile_fields');
+    function toggle() {
+      if (modeSel.value === 'profile_based') {
+        profFields.style.display = '';
+        csvFields.style.display = 'none';
+      } else {
+        profFields.style.display = 'none';
+        csvFields.style.display = '';
+      }
+    }
+    modeSel.addEventListener('change', toggle);
+    toggle();
+  </script>
+</body>
+</html>

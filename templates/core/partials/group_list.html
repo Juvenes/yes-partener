@@ -1,0 +1,5 @@
+{% for g in groups %}
+  {% include "core/partials/group_card.html" with g=g %}
+{% empty %}
+  <p class="muted">Aucun groupe pour l’instant. Commence par en créer un.</p>
+{% endfor %}
