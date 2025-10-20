@@ -18,9 +18,8 @@ Detailed Interval Data (CSV Upload):
 
 Companies can upload a CSV file containing their production or consumption data at 15-minute intervals over a 24-hour period.
 
-A company is either a producer or a consumer for a given dataset.
 
-A downloadable CSV template is provided to ensure data is formatted correctly.
+A downloadable CSV template is provided to ensure data is formatted correctly. That is the energy usage by a compagny (have 0 in production if don't generate or for who that generate sometime have  Consommation 0 and X production meaning over producted, )
 
 CSV Template Format:
 
@@ -41,35 +40,3 @@ A Profile is a standardized 24-hour energy curve (e.g., "Office," "Factory") sca
 The platform multiplies the company's annual total by the selected profile to generate estimated interval data.
 
 Users can create and manage these profiles on a dedicated page.
-
-Analytics & Visualization
-
-The main output of Phase 1 is a comprehensive analytics dashboard for each Project Group, featuring:
-
-Aggregated View: Graphs showing the total combined production versus the total combined consumption of the group throughout the day.
-
-Individual Contribution: Visualizations detailing the energy usage or production of each individual company in the group.
-
-Surplus/Deficit Analysis: Clear identification of time periods where the group is self-sustaining, has excess energy to sell, or needs to buy from the grid.
-
-## 4. Project Development Roadmap
-
-[Current] Phase 1: Data Ingestion & Core Analysis:
-
-Implement CSV upload and Profile creation.
-
-Develop the analytics dashboard with key visualizations.
-
-Refine the UI/UX to feel like a professional tool.
-
-Phase 2: Pricing & Matching (Future):
-
-Introduce functionality to add energy price data.
-
-Develop an algorithm to suggest optimal energy trades between companies within a group.
-
-Phase 3: Automation & Real-Time Data (Future):
-
-Explore integration with real-time data APIs.
-
-Automate the process of identifying and notifying companies of potential energy-sharing opportunities.
