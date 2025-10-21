@@ -67,54 +67,87 @@ def project_detail(request, project_id):
 @require_http_methods(["POST"])
 def member_create(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    form = MemberForm(request.POST, request.FILES)
-    if form.is_valid():
-        m = form.save(commit=False)
-        m.project = project
+    data_mode = request.POST.get('data_mode')
 
-        if m.data_mode == 'timeseries_csv' and not m.timeseries_file:
-            return HttpResponseBadRequest("Pour le mode 'Série 15-min via CSV', un fichier CSV est requis.")
-        
-        if m.data_mode == 'profile_based' and not (m.annual_consumption_kwh or m.annual_production_kwh):
-             return HttpResponseBadRequest("Pour le mode 'Basé sur profil(s)', veuillez fournir au moins une valeur de consommation ou de production annuelle.")
+    if data_mode == 'timeseries_csv':
+        form = MemberForm(request.POST, request.FILES)
+        if form.is_valid():
+            m = form.save(commit=False)
+            m.project = project
+            m.save()
+            return redirect("project_detail", project_id=project.id)
+        return HttpResponseBadRequest(f"Formulaire invalide : {form.errors.as_json()}")
 
-        m.save()
-        return redirect("project_detail", project_id=project.id)
-    
-    return HttpResponseBadRequest(f"Formulaire invalide : {form.errors.as_json()}")
+    elif data_mode == 'profile_based':
+        # --- Logique de génération de CSV à partir d'un profil ---
+        profile_ids = request.POST.getlist('profiles')
+        annual_consumption = request.POST.get('annual_consumption_kwh')
+        annual_production = request.POST.get('annual_production_kwh')
 
+        if not profile_ids:
+            messages.error(request, "Veuillez sélectionner au moins un profil.")
+            return redirect("project_detail", project_id=project_id)
+        if not (annual_consumption or annual_production):
+            messages.error(request, "Veuillez fournir une consommation ou production annuelle.")
+            return redirect("project_detail", project_id=project_id)
 
-@require_http_methods(["POST"])
-def member_profile_add(request, project_id, member_id):
-    member = get_object_or_404(Member, pk=member_id, project_id=project_id)
-    
-    if member.data_mode != 'profile_based':
-        messages.error(request, "Les profils ne peuvent être ajoutés qu'aux membres en mode 'Basé sur profil(s)'.")
-        return redirect("project_detail", project_id=member.project.id)
-
-    form = MemberProfileForm(request.POST)
-    if form.is_valid():
-        mp = form.save(commit=False)
-        mp.member = member
-        
-        if not mp.profile.is_active:
-            messages.warning(request, "Impossible d'ajouter un profil inactif.")
-            return redirect("project_detail", project_id=member.project.id)
+        # Calculer les données sur 96 points
+        try:
+            daily_prod_kwh = (float(annual_production) if annual_production else 0.0) / 365
+            daily_cons_kwh = (float(annual_consumption) if annual_consumption else 0.0) / 365
             
-        # --- LA CORRECTION EST ICI ---
-        # On vérifie si l'association existe déjà avant de la créer
-        if MemberProfile.objects.filter(member=member, profile=mp.profile).exists():
-            messages.info(request, f"Le profil '{mp.profile.name}' est déjà associé à ce membre.")
-        else:
-            mp.save()
-            messages.success(request, f"Le profil '{mp.profile.name}' a été ajouté avec succès.")
+            profiles = Profile.objects.filter(id__in=profile_ids)
+            aggregated_points = pd.DataFrame({'production': [0.0] * 96, 'consumption': [0.0] * 96})
+            
+            for profile in profiles:
+                if profile.points and len(profile.points) == 96:
+                    profile_df = pd.DataFrame(profile.points)
+                    aggregated_points['production'] += profile_df['production'].astype(float)
+                    aggregated_points['consumption'] += profile_df['consumption'].astype(float)
+
+            # Normaliser le profil agrégé pour que sa somme soit 1
+            if aggregated_points['production'].sum() > 0:
+                aggregated_points['production'] /= aggregated_points['production'].sum()
+            if aggregated_points['consumption'].sum() > 0:
+                aggregated_points['consumption'] /= aggregated_points['consumption'].sum()
+            
+            # Appliquer les totaux journaliers
+            final_production = aggregated_points['production'] * daily_prod_kwh
+            final_consumption = aggregated_points['consumption'] * daily_cons_kwh
+
+            # Créer le fichier CSV en mémoire
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["Time", "Production", "Consommation"])
+            t = datetime(2000, 1, 1, 0, 0)
+            step = timedelta(minutes=15)
+            for i in range(96):
+                writer.writerow([t.strftime("%H:%M"), f"{final_production.iloc[i]:.5f}", f"{final_consumption.iloc[i]:.5f}"])
+                t += step
+            
+            # Sauvegarder le nouveau membre et son CSV
+            member = Member(
+                project=project,
+                name=request.POST.get('name'),
+                utility=request.POST.get('utility', ''),
+                data_mode='timeseries_csv',  # On normalise en mode CSV !
+                annual_consumption_kwh=(float(annual_consumption) if annual_consumption else None),
+                annual_production_kwh=(float(annual_production) if annual_production else None)
+            )
+            member.save()
+            csv_file = ContentFile(output.getvalue().encode('utf-8'))
+            member.timeseries_file.save(f"generated_{member.id}.csv", csv_file, save=True)
+
+            messages.success(request, f"Le membre '{member.name}' a été créé avec un CSV généré.")
+
+        except Exception as e:
+            messages.error(request, f"Une erreur est survenue : {e}")
         
-        return redirect("project_detail", project_id=member.project.id)
-        
-    else:
-        # Si le formulaire n'est pas valide (par exemple, aucun profil sélectionné)
-        messages.error(request, "Veuillez sélectionner un profil valide.")
-        return redirect("project_detail", project_id=project_id)
+        return redirect("project_detail", project_id=project.id)
+
+    return HttpResponseBadRequest("Mode de données non valide.")
+
+
 
 @require_http_methods(["POST"])
 def profile_create(request):

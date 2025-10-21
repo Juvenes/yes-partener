@@ -10,7 +10,6 @@ urlpatterns = [
     path("projects/create/", v.project_create, name="project_create"),
     path("projects/<int:project_id>/", v.project_detail, name="project_detail"),
     path("projects/<int:project_id>/members/create/", v.member_create, name="member_create"),
-    path("projects/<int:project_id>/members/<int:member_id>/profiles/add/", v.member_profile_add, name="member_profile_add"),
 
     # Global admin-ish on main page
     path("profiles/create/", v.profile_create, name="profile_create"),

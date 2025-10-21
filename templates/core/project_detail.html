@@ -1,26 +1,24 @@
 <!doctype html>
 <html lang="fr">
-  <head>
+<head>
     <meta charset="utf-8" />
     <title>{{ project.name }} – Phase 1 : Ingestion</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1200px; background-color: #f9f9f9; }
     .grid { display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; align-items: start; }
     .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.5rem; background-color: #fff; }
-    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
-    .input, select { padding: .75rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; box-sizing: border-box; font-size: 1rem; }
+    .input, select { padding: .75rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; box-sizing: border-box; font-size: 1rem; margin-bottom: 0.5rem; }
+    select[multiple] { height: 120px; }
     .btn { padding: .75rem 1.25rem; border-radius: 8px; border: none; background: #222; color: #fff; cursor: pointer; font-size: 1rem; }
     table { width:100%; border-collapse: collapse; font-size: 1.05rem; }
     th, td { border-bottom: 1px solid #eee; padding: 1rem .5rem; text-align: left; vertical-align: top; }
     th { font-weight: 600; color: #555; }
     .muted { color: #666; font-size: .9rem; }
-    code { background: #f5f5f5; padding: .15rem .3rem; border-radius: 4px; }
-    
-    .profile-tag-list { list-style: none; padding: 0; margin: 0.5rem 0 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
-    .profile-tag { background-color: #eef; color: #44b; padding: 0.25rem 0.75rem; border-radius: 16px; font-size: 0.9rem; font-weight: 500; }
+    .messages { list-style: none; padding: 0; margin-bottom: 1rem; }
+    .messages li { padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; }
+    .messages li.success { background-color: #e8f5e9; color: #2e7d32; }
+    .messages li.error { background-color: #ffebee; color: #c62828; }
   </style>
 </head>
 <body>
@@ -29,7 +27,15 @@
       <h1>{{ project.name }} — Phase 1 : Ingestion</h1>
       <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="text-decoration: none;">Analyser le projet &rarr;</a>
   </div>
-  <p class="muted">Ajoutez des membres (compagnies) et définissez leur mode de données : soit via un fichier CSV détaillé, soit en se basant sur des profils de consommation/production.</p>
+
+  {% if messages %}
+    <ul class="messages">
+      {% for message in messages %}
+        <li class="{{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
   <div class="grid">
     <div class="card">
       <h2>Ajouter un membre</h2>
@@ -38,27 +44,33 @@
         <label>Nom</label>
         <input class="input" type="text" name="name" required>
 
-        <label style="margin-top:.5rem">Utilité (optionnel)</label>
+        <label>Utilité (optionnel)</label>
         <input class="input" type="text" name="utility" placeholder="Bureau, magasin, serveur…">
 
-        <label style="margin-top:.5rem">Mode de données</label>
+        <label>Mode de données</label>
         <select name="data_mode" class="input" id="data_mode">
           <option value="timeseries_csv">Série 15-min via CSV</option>
-          <option value="profile_based">Basé sur profil(s)</option>
+          <option value="profile_based">Basé sur profil(s) & total annuel</option>
         </select>
 
         <div id="csv_fields">
-          <label style="margin-top:.5rem">Fichier CSV (Time,Production,Consommation)</label>
+          <label>Fichier CSV (Time,Production,Consommation)</label>
           <input class="input" type="file" name="timeseries_file" accept=".csv">
         </div>
 
         <div id="profile_fields" style="display:none">
-          <p class="muted" style="margin-top:.5rem">Vous associerez les profils juste après la création du membre.</p>
+          <label>Profils (maintenir Ctrl/Cmd pour sélectionner plusieurs)</label>
+          <select name="profiles" class="input" multiple>
+              {% for p in profiles %}
+                <option value="{{ p.id }}">{{ p.name }}</option>
+              {% endfor %}
+          </select>
+
           <label>Total conso. annuelle (kWh)</label>
-          <input class="input" step="0.01" min="0" type="number" name="annual_consumption_kwh" placeholder="Optionnel">
+          <input class="input" step="0.01" min="0" type="number" name="annual_consumption_kwh" placeholder="Ex: 50000">
 
           <label>Total prod. annuelle (kWh)</label>
-          <input class="input" step="0.01" min="0" type="number" name="annual_production_kwh" placeholder="Optionnel">
+          <input class="input" step="0.01" min="0" type="number" name="annual_production_kwh" placeholder="Ex: 12000">
         </div>
 
         <button class="btn" type="submit" style="margin-top:1rem; width: 100%;">Créer le membre</button>
@@ -69,7 +81,7 @@
       <h2>Membres du projet</h2>
       <table>
         <thead>
-          <tr><th>Nom</th><th>Mode</th><th>Détails</th><th>Actions</th></tr>
+          <tr><th>Nom</th><th>Détails du fichier</th></tr>
         </thead>
         <tbody>
           {% for m in members %}
@@ -78,50 +90,16 @@
                 <strong>{{ m.name }}</strong><br>
                 {% if m.utility %}<span class="muted">{{ m.utility }}</span>{% endif %}
               </td>
-              <td>{{ m.get_data_mode_display }}</td>
               <td>
-                {% if m.data_mode == 'timeseries_csv' %}
-                  {% if m.timeseries_file %}
-                    <a href="{{ m.timeseries_file.url }}">Télécharger le fichier CSV</a>
-                  {% else %}
-                    <span class="muted">—</span>
-                  {% endif %}
-                {% else %} {# profile_based #}
-                  {% if m.annual_consumption_kwh or m.annual_production_kwh %}
-                      {% if m.annual_consumption_kwh %}
-                        Consommation: <strong>{{ m.annual_consumption_kwh|floatformat:"0" }} kWh/an</strong><br>
-                      {% endif %}
-                      {% if m.annual_production_kwh %}
-                        Production: <strong>{{ m.annual_production_kwh|floatformat:"0" }} kWh/an</strong>
-                      {% endif %}
-                  {% endif %}
-                  
-                  {% if m.member_profiles.exists %}
-                    <ul class="profile-tag-list">
-                      {% for mp in m.member_profiles.all %}
-                        <li class="profile-tag">{{ mp.profile.name }}</li>
-                      {% endfor %}
-                    </ul>
-                  {% endif %}
-                {% endif %}
-              </td>
-              <td>
-                {% if m.data_mode == 'profile_based' %}
-                  <form method="post" action="{% url 'member_profile_add' project.id m.id %}" class="row">
-                    {% csrf_token %}
-                    <select name="profile" class="input" required style="flex-grow: 1;">
-                      <option value="" disabled selected>Choisir un profil...</option>
-                      {% for p in profiles %}
-                        <option value="{{ p.id }}">{{ p.name }}</option>
-                      {% endfor %}
-                    </select>
-                    <button class="btn" type="submit">Ajouter</button>
-                  </form>
+                {% if m.timeseries_file %}
+                  <a href="{{ m.timeseries_file.url }}">Télécharger le fichier CSV</a>
+                {% else %}
+                  <span class="muted">Aucun fichier</span>
                 {% endif %}
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="4" class="muted" style="text-align: center; padding: 2rem;">Aucun membre pour l’instant.</td></tr>
+            <tr><td colspan="2" class="muted" style="text-align: center; padding: 2rem;">Aucun membre pour l’instant.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -136,9 +114,11 @@
       if (modeSel.value === 'profile_based') {
         profFields.style.display = 'block';
         csvFields.style.display = 'none';
+        csvFields.querySelector('input').required = false;
       } else {
         profFields.style.display = 'none';
         csvFields.style.display = 'block';
+        csvFields.querySelector('input').required = true;
       }
     }
     modeSel.addEventListener('change', toggle);
