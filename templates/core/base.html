@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-g" />
+  <title>{% block title %}MobiWAN{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background-color: #f9f9f9; }
+    header { background: #fff; padding: 1rem 2rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { margin: 0; font-size: 1.5rem; }
+    nav a { margin-left: 1rem; color: #333; text-decoration: none; font-weight: 500; }
+    .container { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.5rem; background-color: #fff; margin-bottom: 1.5rem; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; }
+    .input, select { padding: .75rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; box-sizing: border-box; font-size: 1rem; margin-bottom: 0.5rem; }
+    .btn { padding: .75rem 1.25rem; border-radius: 8px; border: none; background: #222; color: #fff; cursor: pointer; font-size: 1rem; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #eee; padding: .8rem .4rem; text-align: left; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><a href="{% url 'project_list' %}" style="color: inherit; text-decoration: none;">MobiWAN</a></h1>
+    <nav>
+      <a href="{% url 'project_list' %}">Projets</a>
+      <a href="{% url 'profiles' %}">Profils</a>
+      <a href="{% url 'global_parameters' %}">Paramètres Globaux</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

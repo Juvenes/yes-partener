@@ -1,0 +1,50 @@
+{% extends "core/base.html" %}
+
+{% block title %}Profils – MobiWAN{% endblock %}
+
+{% block content %}
+  <h1>Gestion des Profils</h1>
+  <p class="muted">Créez et gérez les profils de consommation et de production ici.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Créer un nouveau profil (courbe 15-min)</h3>
+      <form method="post" action="{% url 'profile_create' %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label>Nom du profil</label>
+        <input class="input" type="text" name="name" required>
+        <label style="margin-top:.5rem">Fichier CSV (Production,Consommation)</label>
+        <input class="input" type="file" name="profile_csv" accept=".csv" required>
+        <p class="muted">Le CSV doit contenir 96 lignes (24h par intervalles de 15 min) avec les colonnes `Production` et `Consommation`.</p>
+        <button class="btn" type="submit" style="margin-top:.75rem">Créer le profil</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Profils existants</h3>
+      <table>
+        <thead>
+          <tr><th>Nom</th><th>Version</th><th>Actif</th><th>Graphique</th></tr>
+        </thead>
+        <tbody>
+          {% for p in profiles %}
+            <tr>
+              <td>{{ p.name }}</td>
+              <td>{{ p.version }}</td>
+              <td>{% if p.is_active %}Oui{% else %}Non{% endif %}</td>
+              <td>
+                {% if p.graph %}
+                  <img src="{{ p.graph.url }}" alt="Graph of {{ p.name }}" style="max-width: 100px;">
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="muted">Aucun profil pour l’instant.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}

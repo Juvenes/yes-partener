@@ -1,72 +1,9 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8" />
-  <title>MobiWAN – Gestion des projets</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1000px }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; }
-    .row { display: flex; gap: .5rem; flex-wrap: wrap; }
-    .input, select { padding: .5rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; }
-    .btn { padding: .55rem .9rem; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; cursor: pointer; }
-    table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom: 1px solid #eee; padding: .4rem .2rem; text-align: left; }
-    .muted { color: #666; font-size: .95rem; }
-    code { background: #f5f5f5; padding: .15rem .3rem; border-radius: 4px; }
-    
-    /* Styles pour les onglets */
-    .tabs { display: flex; border-bottom: 1px solid #ccc; margin-bottom: 1rem; }
-    .tab-button { 
-      padding: 0.75rem 1.25rem; 
-      border: none; 
-      background: none; 
-      cursor: pointer; 
-      font-size: 1rem; 
-      color: #555; 
-      border-bottom: 3px solid transparent;
-      margin-bottom: -1px; /* Overlap border-bottom of tabs */
-    }
-    .tab-button.active { 
-      color: #222; 
-      font-weight: bold; 
-      border-bottom-color: #222; 
-    }
+{% extends "core/base.html" %}
 
-    /* Styles pour le zoom du graphique */
-    .graph-container {
-      position: relative;
-      display: inline-block;
-    }
-    .graph-thumbnail {
-      max-width: 100px;
-      height: auto;
-      display: block;
-    }
-    .graph-large {
-      display: none;
-      position: absolute;
-      top: 50%;
-      left: 100%;
-      transform: translateY(-50%);
-      max-width: 500px;
-      height: auto;
-      border: 1px solid #ccc;
-      background-color: #fff;
-      z-index: 100;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-      padding: 0.5rem;
-      border-radius: 8px;
-    }
-    .graph-container:hover .graph-large {
-      display: block;
-    }
-  </style>
-</head>
-<body>
-  <h1>MobiWAN – Gestion des projets</h1>
+{% block title %}Gestion des projets – MobiWAN{% endblock %}
+
+{% block content %}
+  <h1>Tableau de bord des Projets</h1>
 
   <div class="grid">
     <div class="card">
@@ -99,28 +36,4 @@
       </table>
     </div>
   </div>
-
-  <h2 style="margin-top:2rem">Données Générales</h2>
-  <div class="card">
-    <div class="tabs">
-      <button class="tab-button active" 
-              hx-get="{% url 'profiles_tab' %}" 
-              hx-target="#tab-content" 
-              hx-swap="innerHTML" 
-              hx-indicator="#tab-spinner"
-              onclick="this.parentNode.querySelectorAll('.active').forEach(e => e.classList.remove('active')); this.classList.add('active');"
-      >Profils</button>
-      <button class="tab-button" 
-              hx-get="{% url 'global_parameters_tab' %}" 
-              hx-target="#tab-content" 
-              hx-swap="innerHTML" 
-              hx-indicator="#tab-spinner"
-              onclick="this.parentNode.querySelectorAll('.active').forEach(e => e.classList.remove('active')); this.classList.add('active');"
-      >Paramètres Globaux</button>
-      </div>
-    <div id="tab-content" hx-trigger="load" hx-get="{% url 'profiles_tab' %}" hx-swap="innerHTML">
-        </div>
-    <div id="tab-spinner" class="htmx-indicator" style="display:none; text-align:center; padding:1rem;">Chargement...</div>
-  </div>
-</body>
-</html>
+{% endblock %}

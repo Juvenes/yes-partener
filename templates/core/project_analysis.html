@@ -21,7 +21,7 @@
 <body>
   <div class="container">
     <a href="{% url 'project_detail' project.id %}" class="btn-back">&larr; Retour au projet</a>
-    <h1>📊 Tableau de bord analytique : {{ project.name }}</h1>
+    <h1> Tableau de bord analytique : {{ project.name }}</h1>
 
     <h2>Chiffres Clés sur 24h</h2>
     <div class="kpi-grid">
@@ -31,15 +31,15 @@
       </div>
       <div class="kpi-card">
         <div class="kpi-value">{{ kpis.total_consumption|floatformat:0 }} kWh</div>
-        <div class="kpi-label">🔌 Consommation Totale</div>
+        <div class="kpi-label"> Consommation Totale</div>
       </div>
       <div class="kpi-card" style="background-color: {% if kpis.net_surplus > 0 %}#e8f5e9{% else %}#ffebee{% endif %};">
         <div class="kpi-value" style="color: {% if kpis.net_surplus > 0 %}#2e7d32{% else %}#c62828{% endif %};">{{ kpis.net_surplus|floatformat:0 }} kWh</div>
-        <div class="kpi-label">🔋 Surplus / Déficit Net</div>
+        <div class="kpi-label"> Surplus / Déficit Net</div>
       </div>
        <div class="kpi-card">
         <div class="kpi-value">{{ kpis.autonomy_coverage|floatformat:2 }} %</div>
-        <div class="kpi-label">🌍 Taux d'autonomie du groupe</div>
+        <div class="kpi-label"> Taux d'autonomie du groupe</div>
       </div>
     </div>
     
@@ -55,11 +55,11 @@
 
     <div class="chart-grid">
         <div class="card">
-            <h2>🏆 Top 5 Producteurs</h2>
+            <h2> Top 5 Producteurs</h2>
             <div id="producers-pie"></div>
         </div>
         <div class="card">
-            <h2>🛒 Top 5 Consommateurs</h2>
+            <h2> Top 5 Consommateurs</h2>
             <div id="consumers-pie"></div>
         </div>
     </div>
