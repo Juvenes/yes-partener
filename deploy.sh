@@ -27,7 +27,6 @@ source "$VENV_DIR/bin/activate"
 echo "Installing dependencies..."
 pip install -r requirements.txt
 
-# --- Database & Media ---
 
 echo "Cleaning media directory..."
 rm -rf media/*
