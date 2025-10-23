@@ -30,7 +30,6 @@ python3 manage.py makemigrations
 echo "Applying migrations..."
 python3 manage.py migrate
 
-# --- Server Management ---
 
 # Kill any existing server process to free up the port
 echo "Stopping any existing Django server..."
