@@ -28,7 +28,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
-
+CSRF_TRUSTED_ORIGINS = ["https://yes-partner.olnksecdb.space"]
 ROOT_URLCONF = "yespartener.urls"
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
