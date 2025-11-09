@@ -244,10 +244,15 @@ class MemberProfileForm(forms.ModelForm):
 
 class ProfileForm(forms.ModelForm):
     profile_csv = forms.FileField()
+    dataset_type = forms.ChoiceField(
+        choices=(("consumption", "Profil de consommation"), ("production", "Profil de production")),
+        initial="consumption",
+        label="Type de profil",
+    )
 
     class Meta:
         model = Profile
-        fields = ["name", "profile_csv"]
+        fields = ["name", "profile_csv", "dataset_type"]
 
 class GlobalParameterForm(forms.ModelForm):
     class Meta:

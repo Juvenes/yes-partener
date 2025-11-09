@@ -219,14 +219,68 @@ def member_create(request, project_id):
 def profile_create(request):
     form = ProfileForm(request.POST, request.FILES)
     if form.is_valid():
-        profile_csv = request.FILES["profile_csv"]
-        decoded_file = profile_csv.read().decode('utf-8').splitlines()
-        reader = csv.DictReader(decoded_file)
+        uploaded_file = form.cleaned_data["profile_csv"]
+        dataset_type_raw = (form.cleaned_data.get("dataset_type") or "consumption").lower()
+        dataset_type = cast(DatasetType, dataset_type_raw if dataset_type_raw in ("consumption", "production") else "consumption")
+
+        def _parse_float(value):
+            if value is None:
+                return None
+            text = str(value).strip()
+            if not text:
+                return None
+            text = text.replace(",", ".")
+            try:
+                return float(text)
+            except ValueError:
+                return None
+
+        def _fallback_numeric(row_values):
+            numeric_candidates = []
+            for idx, value in enumerate(row_values):
+                parsed = _parse_float(value)
+                if parsed is not None:
+                    numeric_candidates.append((idx, parsed))
+            for idx, parsed in numeric_candidates:
+                if idx > 0:
+                    return parsed
+            return numeric_candidates[0][1] if numeric_candidates else 0.0
+
+        reader = None
+        if uploaded_file.name.lower().endswith((".xlsx", ".xls")):
+            try:
+                conversion = convert_excel_timeseries_to_csv(uploaded_file, dataset_type)
+            except ExcelTimeseriesFormatError as exc:
+                messages.error(request, f"Impossible de traiter le fichier Excel : {exc}")
+                return redirect("profiles")
+            reader = csv.DictReader(io.StringIO(conversion.csv_content))
+        elif uploaded_file.name.lower().endswith(".csv"):
+            try:
+                uploaded_file.seek(0)
+                decoded_content = uploaded_file.read().decode("utf-8")
+            except UnicodeDecodeError:
+                uploaded_file.seek(0)
+                decoded_content = uploaded_file.read().decode("latin-1")
+            finally:
+                uploaded_file.seek(0)
+            reader = csv.DictReader(decoded_content.splitlines())
+        else:
+            messages.error(request, "Format de fichier non supporté. Veuillez fournir un CSV ou un Excel.")
+            return redirect("profiles")
+
         points = []
         for row in reader:
+            production_value = _parse_float(row.get("Production")) if "Production" in row else None
+            consumption_value = _parse_float(row.get("Consommation")) if "Consommation" in row else None
+
+            if production_value is None and dataset_type == "production":
+                production_value = _fallback_numeric(list(row.values()))
+            if consumption_value is None and dataset_type == "consumption":
+                consumption_value = _fallback_numeric(list(row.values()))
+
             points.append({
-                "production": float(row['Production']),
-                "consumption": float(row['Consommation'])
+                "production": float(production_value or 0.0),
+                "consumption": float(consumption_value or 0.0),
             })
 
         if len(points) != 96:
