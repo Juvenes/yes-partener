@@ -57,8 +57,15 @@
         </select>
 
         <div id="csv_fields">
-          <label>Fichier CSV (Time,Production,Consommation)</label>
-          <input class="input" type="file" name="timeseries_file" accept=".csv">
+          <label>Fichier (CSV ou Excel, pas d'en-têtes obligatoires)</label>
+          <input class="input" type="file" name="timeseries_file" accept=".csv,.xlsx,.xls">
+
+          <label>Type de jeu de données (pour Excel)</label>
+          <select name="dataset_type" class="input">
+            <option value="consumption" selected>Profil de consommation</option>
+            <option value="production">Profil de production</option>
+          </select>
+          <p class="muted" style="margin-top:0.25rem;">Les fichiers doivent contenir des pas de 15 minutes (96 valeurs par journée).</p>
         </div>
 
         <div id="profile_fields" style="display:none">

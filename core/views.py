@@ -11,6 +11,11 @@ from .forms import (
     CommunityScenarioForm,
 )
 from .stage3 import MemberFinancials, run_stage_three, DEFAULT_TARIFFS
+from .excel_import import (
+    convert_excel_timeseries_to_csv,
+    ExcelTimeseriesFormatError,
+    DatasetType,
+)
 import csv
 from datetime import datetime, timedelta
 import json
@@ -21,6 +26,8 @@ from django.db import IntegrityError # Import IntegrityError
 from django.contrib import messages
 import pandas as pd
 from django.http import JsonResponse
+from django.utils.text import slugify
+from typing import cast
 
 
 # Simplified project list view
@@ -91,7 +98,51 @@ def member_create(request, project_id):
         if form.is_valid():
             m = form.save(commit=False)
             m.project = project
+            uploaded_file = form.cleaned_data.get("timeseries_file")
+            dataset_type_raw = (request.POST.get("dataset_type") or "consumption").lower()
+            dataset_type = dataset_type_raw if dataset_type_raw in ("consumption", "production") else "consumption"
+
+            if uploaded_file and uploaded_file.name.lower().endswith((".xlsx", ".xls")):
+                try:
+                    conversion = convert_excel_timeseries_to_csv(
+                        uploaded_file,
+                        cast(DatasetType, dataset_type),
+                    )
+                except ExcelTimeseriesFormatError as exc:
+                    messages.error(request, f"Impossible de traiter le fichier Excel : {exc}")
+                    return redirect("project_detail", project_id=project.id)
+
+                csv_content = ContentFile(conversion.csv_content.encode("utf-8"))
+                safe_name = slugify(m.name) or "member"
+                filename = f"{safe_name}_timeseries.csv"
+                m.annual_consumption_kwh = conversion.annual_consumption_kwh or m.annual_consumption_kwh
+                m.annual_production_kwh = conversion.annual_production_kwh or m.annual_production_kwh
+                if conversion.annual_production_kwh:
+                    m.injected_energy_kwh = conversion.annual_production_kwh
+                m.timeseries_file.save(filename, csv_content, save=False)
+            elif uploaded_file and uploaded_file.name.lower().endswith(".csv"):
+                # For CSV uploads we keep the provided file and compute totals when possible.
+                try:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file)
+                    if "Consommation" in df.columns:
+                        m.annual_consumption_kwh = float(pd.to_numeric(df["Consommation"], errors="coerce").fillna(0).sum())
+                    if "Production" in df.columns:
+                        production_total = float(pd.to_numeric(df["Production"], errors="coerce").fillna(0).sum())
+                        m.annual_production_kwh = production_total
+                        m.injected_energy_kwh = production_total
+                except Exception:
+                    messages.warning(request, "Le fichier CSV a été importé, mais le total annuel n'a pas pu être calculé.")
+                finally:
+                    uploaded_file.seek(0)
+                m.timeseries_file = uploaded_file
+            else:
+                if uploaded_file:
+                    messages.error(request, "Format de fichier non supporté. Veuillez fournir un CSV ou un Excel.")
+                    return redirect("project_detail", project_id=project.id)
+
             m.save()
+            messages.success(request, f"Le membre '{m.name}' a été créé.")
             return redirect("project_detail", project_id=project.id)
         return HttpResponseBadRequest(f"Formulaire invalide : {form.errors.as_json()}")
 
