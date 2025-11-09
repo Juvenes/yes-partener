@@ -24,7 +24,7 @@ class ProfileForm(forms.ModelForm):
 
     class Meta:
         model = Profile
-        fields = ["name", "profile_csv"]
+        fields = ["name", "profile_type", "profile_csv"]
 
 class GlobalParameterForm(forms.ModelForm):
     class Meta:

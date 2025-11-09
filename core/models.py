@@ -3,9 +3,16 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 
 # ---- GLOBAL SHARED PROFILE ----
 class Profile(models.Model):
+    PROFILE_TYPES = [
+        ("consumption", "Consommation"),
+        ("production", "Production"),
+    ]
+
     name = models.CharField(max_length=200, unique=True)
-    # 96 values for 24h with a 15 min interval;
-    points = models.JSONField(help_text="List of 96 floats (24h, 15 min interval)")
+    profile_type = models.CharField(max_length=20, choices=PROFILE_TYPES, default="consumption")
+    # Complete year of quarter-hour values (~35k rows) stored as JSON.
+    points = models.JSONField(help_text="List of quarter-hour values for a full year")
+    metadata = models.JSONField(blank=True, null=True)
     version = models.PositiveIntegerField(default=1)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -18,7 +25,11 @@ class Profile(models.Model):
         return f"{self.name} v{self.version}"
 
     def is_valid_shape(self):
-        return isinstance(self.points, list) and len(self.points) == 96
+        return isinstance(self.points, list) and len(self.points) >= 96
+
+    @property
+    def point_count(self):
+        return len(self.points) if isinstance(self.points, list) else 0
 
 # ---- PROJECT & MEMBERS ----
 class Project(models.Model):
@@ -46,6 +57,7 @@ class Member(models.Model):
 
     # Mode: timeseries_csv
     timeseries_file = models.FileField(upload_to="timeseries/", blank=True, null=True)
+    timeseries_metadata = models.JSONField(blank=True, null=True)
 
     # Mode: profile_based
     annual_consumption_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])

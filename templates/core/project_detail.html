@@ -19,6 +19,9 @@
     .messages li { padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; }
     .messages li.success { background-color: #e8f5e9; color: #2e7d32; }
     .messages li.error { background-color: #ffebee; color: #c62828; }
+    .file-block { margin-top: .5rem; }
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .35rem; margin-top: .5rem; font-size: .9rem; }
+    .meta-grid span { background: #f4f4f8; padding: .4rem .6rem; border-radius: 6px; display: inline-block; }
   </style>
 </head>
 <body>
@@ -54,8 +57,9 @@
         </select>
 
         <div id="csv_fields">
-          <label>Fichier CSV (Time,Production,Consommation)</label>
-          <input class="input" type="file" name="timeseries_file" accept=".csv">
+          <label>Fichier de données (CSV ou Excel, quart d'heure)</label>
+          <input class="input" type="file" name="timeseries_file" accept=".csv,.xls,.xlsx">
+          <p class="muted">Colonnes détectées automatiquement (horodatage + énergie). Un résumé vous sera affiché après import.</p>
         </div>
 
         <div id="profile_fields" style="display:none">
@@ -92,7 +96,28 @@
               </td>
               <td>
                 {% if m.timeseries_file %}
-                  <a href="{{ m.timeseries_file.url }}">Télécharger le fichier CSV</a>
+                  <div class="file-block">
+                    <a href="{{ m.timeseries_file.url }}">Télécharger le fichier</a>
+                    {% if m.timeseries_metadata %}
+                      <div class="meta-grid">
+                        <span><strong>Lignes :</strong> {{ m.timeseries_metadata.row_count }}</span>
+                        <span><strong>Début :</strong> {{ m.timeseries_metadata.start|default:"—"|slice:":16" }}</span>
+                        <span><strong>Fin :</strong> {{ m.timeseries_metadata.end|default:"—"|slice:":16" }}</span>
+                        <span><strong>Granularité :</strong> {% if m.timeseries_metadata.granularity_minutes %}{{ m.timeseries_metadata.granularity_minutes|floatformat:0 }} min{% else %}—{% endif %}</span>
+                        <span><strong>Consommation :</strong> {{ m.timeseries_metadata.totals.consumption_kwh|floatformat:0 }} kWh</span>
+                        <span><strong>Production :</strong> {{ m.timeseries_metadata.totals.production_kwh|floatformat:0 }} kWh</span>
+                      </div>
+                      {% if m.timeseries_metadata.warnings %}
+                        <ul class="muted" style="margin-top:.5rem; padding-left:1.2rem;">
+                          {% for warning in m.timeseries_metadata.warnings %}
+                            <li>{{ warning }}</li>
+                          {% endfor %}
+                        </ul>
+                      {% endif %}
+                    {% else %}
+                      <span class="muted">Métadonnées indisponibles.</span>
+                    {% endif %}
+                  </div>
                 {% else %}
                   <span class="muted">Aucun fichier</span>
                 {% endif %}

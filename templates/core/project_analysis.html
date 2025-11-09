@@ -9,126 +9,208 @@
     body { font-family: system-ui, sans-serif; background-color: #f4f7f9; color: #333; margin: 0; padding: 2rem; }
     .container { max-width: 1600px; margin: 0 auto; }
     .card { background: #fff; border-radius: 12px; padding: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 2rem; }
-    h1, h2 { color: #1a253c; }
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
-    .kpi-card { background: #fff; border: 1px solid #eef; padding: 1.5rem; border-radius: 12px; text-align: center; }
-    .kpi-value { font-size: 2.5rem; font-weight: 700; color: #2c3e50; }
-    .kpi-label { font-size: 1rem; color: #7f8c8d; margin-top: 0.5rem; }
-    .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+    h1, h2 { color: #1a253c; margin-top: 0; }
     .btn-back { display: inline-block; margin-bottom: 2rem; padding: .75rem 1.5rem; background: #34495e; color: #fff; text-decoration: none; border-radius: 8px; }
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .meta-chip { background: #eef2ff; border-radius: 10px; padding: .85rem 1rem; box-shadow: inset 0 0 0 1px rgba(52,73,94,.08); }
+    .meta-chip strong { display: block; font-size: .8rem; color: #556987; text-transform: uppercase; letter-spacing: .08em; margin-bottom: .35rem; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem; }
+    .kpi-card { background: linear-gradient(145deg, #ffffff, #f6f8ff); border-radius: 14px; padding: 1.75rem; box-shadow: 0 12px 30px rgba(31,61,90,.08); }
+    .kpi-value { font-size: 2.5rem; font-weight: 700; color: #1a253c; }
+    .kpi-label { font-size: 1rem; color: #6b7c93; margin-top: 0.35rem; }
+    .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 2rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 0.85rem 0.5rem; border-bottom: 1px solid #e6ecf5; }
+    th { color: #5f6c85; font-weight: 600; }
+    tr:hover td { background: #f8fbff; }
+    .muted { color: #7b8a9a; font-style: italic; }
   </style>
 </head>
 <body>
   <div class="container">
     <a href="{% url 'project_detail' project.id %}" class="btn-back">&larr; Retour au projet</a>
-    <h1> Tableau de bord analytique : {{ project.name }}</h1>
+    <h1>Tableau de bord analytique : {{ project.name }}</h1>
 
-    <h2>Chiffres Clés sur 24h</h2>
+    <div class="card">
+      <h2>Couverture des données</h2>
+      <div class="meta-grid">
+        <div class="meta-chip">
+          <strong>Nombre de lignes</strong>
+          <span>{{ aggregate_metadata.row_count }}</span>
+        </div>
+        <div class="meta-chip">
+          <strong>Période couverte</strong>
+          <span>{% if aggregate_metadata.start %}{{ aggregate_metadata.start|slice:":10" }} → {{ aggregate_metadata.end|slice:":10" }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="meta-chip">
+          <strong>Granularité détectée</strong>
+          <span>{% if aggregate_metadata.granularity_minutes %}{{ aggregate_metadata.granularity_minutes|floatformat:0 }} minutes{% else %}—{% endif %}</span>
+        </div>
+        <div class="meta-chip">
+          <strong>Jours couverts</strong>
+          <span>{% if aggregate_metadata.coverage_days %}{{ aggregate_metadata.coverage_days|floatformat:1 }} jours{% else %}—{% endif %}</span>
+        </div>
+        <div class="meta-chip">
+          <strong>Manques estimés</strong>
+          <span>{% if aggregate_metadata.missing_rows %}{{ aggregate_metadata.missing_rows }} lignes{% else %}0{% endif %}</span>
+        </div>
+      </div>
+    </div>
+
+    <h2>Chiffres clés</h2>
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-value">{{ kpis.total_production|floatformat:0 }} kWh</div>
-        <div class="kpi-label">⚡️ Production Totale</div>
+        <div class="kpi-label">Production totale</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-value">{{ kpis.total_consumption|floatformat:0 }} kWh</div>
-        <div class="kpi-label"> Consommation Totale</div>
+        <div class="kpi-label">Consommation totale</div>
       </div>
-      <div class="kpi-card" style="background-color: {% if kpis.net_surplus > 0 %}#e8f5e9{% else %}#ffebee{% endif %};">
-        <div class="kpi-value" style="color: {% if kpis.net_surplus > 0 %}#2e7d32{% else %}#c62828{% endif %};">{{ kpis.net_surplus|floatformat:0 }} kWh</div>
-        <div class="kpi-label"> Surplus / Déficit Net</div>
+      <div class="kpi-card" style="background: {% if kpis.net_surplus >= 0 %}#e8f5e9{% else %}#ffebee{% endif %};">
+        <div class="kpi-value" style="color: {% if kpis.net_surplus >= 0 %}#2e7d32{% else %}#c62828{% endif %};">{{ kpis.net_surplus|floatformat:0 }} kWh</div>
+        <div class="kpi-label">Solde net</div>
       </div>
-       <div class="kpi-card">
-        <div class="kpi-value">{{ kpis.autonomy_coverage|floatformat:2 }} %</div>
-        <div class="kpi-label"> Taux d'autonomie du groupe</div>
+      <div class="kpi-card">
+        <div class="kpi-value">{{ kpis.autonomy_coverage|floatformat:1 }} %</div>
+        <div class="kpi-label">Autonomie du groupe</div>
       </div>
     </div>
-    
+
     <div class="card" style="margin-top: 2rem;">
-        <h2>Analyse Temporelle (Production & Consommation)</h2>
-        <div id="main-chart"></div>
-    </div>
-    
-    <div class="card">
-        <h2>Analyse du Surplus / Déficit</h2>
-        <div id="surplus-chart"></div>
+      <h2>Production vs consommation par mois</h2>
+      <div id="monthly-chart"></div>
     </div>
 
     <div class="chart-grid">
-        <div class="card">
-            <h2> Top 5 Producteurs</h2>
-            <div id="producers-pie"></div>
-        </div>
-        <div class="card">
-            <h2> Top 5 Consommateurs</h2>
-            <div id="consumers-pie"></div>
-        </div>
+      <div class="card">
+        <h2>30 derniers jours</h2>
+        <div id="daily-chart"></div>
+      </div>
+      <div class="card">
+        <h2>Profil moyen sur 24h</h2>
+        <div id="avg-chart"></div>
+      </div>
     </div>
 
+    <div class="chart-grid">
+      <div class="card">
+        <h2>Top 5 producteurs</h2>
+        <div id="producers-pie"></div>
+      </div>
+      <div class="card">
+        <h2>Top 5 consommateurs</h2>
+        <div id="consumers-pie"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Détails par membre</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Membre</th>
+            <th>Lignes</th>
+            <th>Période</th>
+            <th>Consommation (kWh)</th>
+            <th>Production (kWh)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in member_stats %}
+            <tr>
+              <td>{{ item.member.name }}</td>
+              <td>{{ item.metadata.row_count }}</td>
+              <td>
+                {% if item.metadata.start %}
+                  {{ item.metadata.start|slice:":10" }} → {{ item.metadata.end|slice:":10" }}
+                {% else %}—{% endif %}
+              </td>
+              <td>{{ item.total_consumption|floatformat:0 }}</td>
+              <td>{{ item.total_production|floatformat:0 }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="muted">Aucune donnée disponible.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <script>
-    const timestamps = {{ timestamps|safe }};
-    const seriesData = {{ series_data|safe }};
-    const surplusSeries = {{ surplus_series|safe }};
+    const monthlyCategories = {{ monthly_categories|safe }};
+    const monthlySeries = {{ monthly_series|safe }};
+    const dailyCategories = {{ daily_categories|safe }};
+    const dailySeries = {{ daily_series|safe }};
+    const avgProfileCategories = {{ avg_profile_categories|safe }};
+    const avgProfileSeries = {{ avg_profile_series|safe }};
     const pieProducers = {{ pie_producers|safe }};
     const pieConsumers = {{ pie_consumers|safe }};
 
-    // --- Graphique Principal ---
-    const mainChartOptions = {
-      series: seriesData,
-      chart: { type: 'line', height: 450, zoom: { enabled: true } },
-      stroke: { width: 2, curve: 'smooth' },
-      xaxis: { categories: timestamps },
-      title: { text: 'Production et Consommation par membre', align: 'left' },
-      legend: { position: 'top', horizontalAlign: 'right', floating: true, offsetY: -25, offsetX: -5 },
-      tooltip: { y: { formatter: (val) => val.toFixed(2) + " kWh" } }
-    };
-    const mainChart = new ApexCharts(document.querySelector("#main-chart"), mainChartOptions);
-    mainChart.render();
-    
-    // --- Graphique de Surplus ---
-    const surplusChartOptions = {
-        series: [{ name: 'Surplus/Déficit', data: surplusSeries }],
-        chart: { type: 'area', height: 250 },
-        colors: ['#008FFB'],
-        dataLabels: { enabled: false },
-        stroke: { curve: 'smooth', width: 2 },
-        xaxis: { categories: timestamps },
-        title: { text: 'Surplus (bleu) et Déficit (rouge) du groupe', align: 'left' },
-        tooltip: { y: { formatter: (val) => val.toFixed(2) + " kWh" } },
-        fill: {
-            type: 'gradient',
-            gradient: {
-                shadeIntensity: 1,
-                opacityFrom: 0.7,
-                opacityTo: 0.9,
-                stops: [0, 90, 100]
-            }
-        },
-        // Colorer le surplus en bleu et le déficit en rouge
-        markers: {
-            colors: surplusSeries.map(val => val < 0 ? '#FF4560' : '#008FFB')
-        }
-    };
-    const surplusChart = new ApexCharts(document.querySelector("#surplus-chart"), surplusChartOptions);
-    surplusChart.render();
+    const monthlyChart = new ApexCharts(document.querySelector('#monthly-chart'), {
+      series: [
+        { name: 'Production', type: 'column', data: monthlySeries.production },
+        { name: 'Consommation', type: 'column', data: monthlySeries.consumption },
+        { name: 'Solde net', type: 'line', data: monthlySeries.net }
+      ],
+      chart: { type: 'line', height: 420, stacked: false },
+      stroke: { width: [0, 0, 3], curve: 'smooth' },
+      dataLabels: { enabled: false },
+      xaxis: { categories: monthlyCategories },
+      yaxis: [{ title: { text: 'kWh' } }],
+      tooltip: { shared: true }
+    });
+    monthlyChart.render();
 
+    const dailyChart = new ApexCharts(document.querySelector('#daily-chart'), {
+      series: [
+        { name: 'Production', data: dailySeries.production },
+        { name: 'Consommation', data: dailySeries.consumption }
+      ],
+      chart: { type: 'line', height: 360, zoom: { enabled: true } },
+      stroke: { curve: 'smooth', width: 3 },
+      xaxis: { categories: dailyCategories },
+      dataLabels: { enabled: false },
+      tooltip: { shared: true }
+    });
+    dailyChart.render();
 
-    // --- Graphiques Circulaires ---
-    const pieOptions = (title, labels, data) => ({
-      series: data,
+    const avgChart = new ApexCharts(document.querySelector('#avg-chart'), {
+      series: [
+        { name: 'Production moyenne', data: avgProfileSeries.production },
+        { name: 'Consommation moyenne', data: avgProfileSeries.consumption }
+      ],
+      chart: { type: 'line', height: 360 },
+      stroke: { curve: 'smooth', width: 2 },
+      xaxis: { categories: avgProfileCategories, tickAmount: 8 },
+      dataLabels: { enabled: false },
+      tooltip: { shared: true, y: { formatter: (val) => `${val.toFixed(2)} kWh` } }
+    });
+    avgChart.render();
+
+    const safePie = (data, placeholder) => {
+      if (!data.data || data.data.length === 0) {
+        return { labels: [placeholder], data: [0] };
+      }
+      return data;
+    };
+
+    const pieOptions = (title, data) => ({
+      series: data.data,
       chart: { type: 'donut', height: 350 },
-      labels: labels,
+      labels: data.labels,
       title: { text: title },
-      responsive: [{ breakpoint: 480, options: { chart: { width: 200 }, legend: { position: 'bottom' } } }]
+      dataLabels: { formatter: (val, opts) => `${opts.w.globals.series[opts.seriesIndex].toFixed(0)} kWh` }
     });
 
-    const producersPie = new ApexCharts(document.querySelector("#producers-pie"), pieOptions('Répartition de la production (kWh)', pieProducers.labels, pieProducers.data));
-    producersPie.render();
-    
-    const consumersPie = new ApexCharts(document.querySelector("#consumers-pie"), pieOptions('Répartition de la consommation (kWh)', pieConsumers.labels, pieConsumers.data));
-    consumersPie.render();
-
+    new ApexCharts(
+      document.querySelector('#producers-pie'),
+      pieOptions('Répartition production', safePie(pieProducers, 'Aucune donnée'))
+    ).render();
+    new ApexCharts(
+      document.querySelector('#consumers-pie'),
+      pieOptions('Répartition consommation', safePie(pieConsumers, 'Aucune donnée'))
+    ).render();
   </script>
 </body>
 </html>

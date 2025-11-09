@@ -18,8 +18,8 @@ class MemberAdmin(admin.ModelAdmin):
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ("name", "version", "is_active")
-    list_filter = ("is_active",)
+    list_display = ("name", "profile_type", "version", "is_active")
+    list_filter = ("profile_type", "is_active",)
     search_fields = ("name",)
 
 @admin.register(GlobalParameter)
