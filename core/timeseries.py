@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import pandas as pd
+from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
 
 
@@ -26,6 +27,7 @@ class TimeseriesMetadata:
     totals: Dict[str, float]
     detected_columns: Dict[str, Optional[str]]
     file_type: str
+    normalized_year: Optional[int] = None
     warnings: List[str] = field(default_factory=list)
 
 
@@ -63,6 +65,7 @@ def parse_member_timeseries(source: Readable) -> TimeseriesResult:
     warnings: List[str] = []
 
     df = frame[[timestamp_col]].rename(columns={timestamp_col: "timestamp"})
+    df["timestamp"], normalized_year = _normalise_to_reference_year(df["timestamp"])
 
     if production_col:
         df["production_kwh"] = _to_float_series(frame[production_col])
@@ -81,7 +84,13 @@ def parse_member_timeseries(source: Readable) -> TimeseriesResult:
         detected_cols["consumption"] = fallback
         warnings.append("Aucune colonne Production/Consommation détectée automatiquement. La première colonne numérique a été utilisée comme consommation.")
 
-    metadata = build_metadata(df, detected_cols, file_type="member_timeseries", warnings=warnings)
+    metadata = build_metadata(
+        df,
+        detected_cols,
+        file_type="member_timeseries",
+        warnings=warnings,
+        normalized_year=normalized_year,
+    )
     return TimeseriesResult(df, metadata)
 
 
@@ -98,6 +107,7 @@ def parse_profile_timeseries(source: Readable, profile_type: str) -> TimeseriesR
     df = frame[[timestamp_col, preferred]].rename(
         columns={timestamp_col: "timestamp", preferred: "value_kwh"}
     )
+    df["timestamp"], normalized_year = _normalise_to_reference_year(df["timestamp"])
     df["value_kwh"] = _to_float_series(df["value_kwh"])
 
     totals = {"value_kwh": float(df["value_kwh"].sum())}
@@ -107,6 +117,7 @@ def parse_profile_timeseries(source: Readable, profile_type: str) -> TimeseriesR
         {"timestamp": timestamp_col, "value": preferred},
         file_type=f"profile_{profile_type}",
         totals_override=totals,
+        normalized_year=normalized_year,
     )
 
     return TimeseriesResult(df, metadata)
@@ -219,13 +230,14 @@ def build_metadata(
     file_type: str,
     totals_override: Optional[Dict[str, float]] = None,
     warnings: Optional[List[str]] = None,
+    normalized_year: Optional[int] = None,
 ) -> TimeseriesMetadata:
     timestamps = pd.to_datetime(df["timestamp"], errors="coerce")
     timestamps = timestamps.dropna()
     row_count = len(df)
 
-    start = timestamps.min()
-    end = timestamps.max()
+    start_ts = timestamps.min()
+    end_ts = timestamps.max()
 
     granularity = None
     coverage_days = None
@@ -242,8 +254,8 @@ def build_metadata(
                 granularity_minutes = float(granularity) / timedelta(minutes=1)
             granularity_minutes = float(granularity_minutes)
 
-    if start is not None and end is not None and granularity_minutes:
-        total_minutes = (end - start).total_seconds() / 60
+    if start_ts is not None and end_ts is not None and granularity_minutes:
+        total_minutes = (end_ts - start_ts).total_seconds() / 60
         if granularity_minutes:
             expected_rows = int(round(total_minutes / granularity_minutes)) + 1
             missing_rows = max(expected_rows - row_count, 0)
@@ -256,14 +268,71 @@ def build_metadata(
 
     metadata = TimeseriesMetadata(
         row_count=row_count,
-        start=start.isoformat() if pd.notna(start) else None,
-        end=end.isoformat() if pd.notna(end) else None,
+        start=start_ts.isoformat() if pd.notna(start_ts) else None,
+        end=end_ts.isoformat() if pd.notna(end_ts) else None,
         granularity_minutes=granularity_minutes,
         coverage_days=coverage_days,
         missing_rows=missing_rows,
         totals=totals,
         detected_columns=detected,
         file_type=file_type,
+        normalized_year=normalized_year or (int(start_ts.year) if pd.notna(start_ts) else None),
         warnings=warnings or [],
     )
     return metadata
+
+
+def _get_reference_year() -> Optional[int]:
+    year = getattr(settings, "TIMESERIES_REFERENCE_YEAR", 2025)
+    if year in (None, "", False):
+        return None
+    try:
+        value = int(year)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    return value
+
+
+def _is_leap_year(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
+def _next_leap_year(year: int) -> int:
+    candidate = year
+    while not _is_leap_year(candidate):
+        candidate += 1
+    return candidate
+
+
+def _normalise_to_reference_year(series: pd.Series) -> Tuple[pd.Series, Optional[int]]:
+    timestamps = pd.to_datetime(series, errors="coerce")
+    normalized = pd.Series(timestamps, index=series.index)
+
+    reference_year = _get_reference_year()
+    if reference_year is None:
+        return normalized, None
+
+    valid = normalized.dropna().sort_values()
+    if valid.empty:
+        return normalized, None
+
+    start = valid.iloc[0]
+    target_year = reference_year
+    contains_feb_29 = ((valid.dt.month == 2) & (valid.dt.day == 29)).any()
+    if contains_feb_29 and not _is_leap_year(target_year):
+        target_year = _next_leap_year(target_year)
+
+    try:
+        target_start = start.replace(year=target_year)
+    except ValueError:
+        # Should not happen thanks to leap-year adjustment, but keep a fallback.
+        target_start = datetime(target_year, start.month, min(start.day, 28), start.hour, start.minute, start.second)
+
+    first_value = start
+    for idx, original in normalized.dropna().items():
+        delta = original - first_value
+        normalized.at[idx] = target_start + delta
+
+    return normalized, target_year

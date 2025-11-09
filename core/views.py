@@ -405,6 +405,14 @@ def project_analysis_page(request, project_id):
         'consumption': recent_daily['consumption_kwh'].round(2).tolist(),
     }
 
+    hourly_totals = totals_by_instant.resample('H').sum()
+    yearly_categories = [dt.strftime('%Y-%m-%d %H:%M') for dt in hourly_totals.index]
+    yearly_series = {
+        'production': hourly_totals['production_kwh'].round(2).tolist(),
+        'consumption': hourly_totals['consumption_kwh'].round(2).tolist(),
+        'net': (hourly_totals['production_kwh'] - hourly_totals['consumption_kwh']).round(2).tolist(),
+    }
+
     avg_profile = totals_by_instant.groupby(totals_by_instant.index.time).mean()
     avg_profile_index = [time.strftime('%H:%M') for time in avg_profile.index]
     avg_profile_series = {
@@ -447,6 +455,8 @@ def project_analysis_page(request, project_id):
         'monthly_series': json.dumps(monthly_series),
         'daily_categories': json.dumps(daily_categories),
         'daily_series': json.dumps(daily_series),
+        'yearly_categories': json.dumps(yearly_categories),
+        'yearly_series': json.dumps(yearly_series),
         'avg_profile_categories': json.dumps(avg_profile_index),
         'avg_profile_series': json.dumps(avg_profile_series),
         'aggregate_metadata': aggregate_metadata,
