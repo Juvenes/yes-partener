@@ -10,7 +10,13 @@
     .container { max-width: 1600px; margin: 0 auto; }
     .card { background: #fff; border-radius: 12px; padding: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 2rem; }
     h1, h2 { color: #1a253c; margin-top: 0; }
-    .btn-back { display: inline-block; margin-bottom: 2rem; padding: .75rem 1.5rem; background: #34495e; color: #fff; text-decoration: none; border-radius: 8px; }
+    .btn-back { display: inline-block; margin-bottom: 0; padding: .75rem 1.5rem; background: #34495e; color: #fff; text-decoration: none; border-radius: 8px; }
+    .header-bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .header-left { display: flex; flex-direction: column; gap: 0.75rem; }
+    .action-buttons { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .btn-primary, .btn-secondary { display: inline-block; padding: .75rem 1.3rem; border-radius: 8px; color: #fff; text-decoration: none; font-weight: 600; }
+    .btn-primary { background: #0d47a1; }
+    .btn-secondary { background: #5f6c85; }
     .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; }
     .meta-chip { background: #eef2ff; border-radius: 10px; padding: .85rem 1rem; box-shadow: inset 0 0 0 1px rgba(52,73,94,.08); }
     .meta-chip strong { display: block; font-size: .8rem; color: #556987; text-transform: uppercase; letter-spacing: .08em; margin-bottom: .35rem; }
@@ -28,8 +34,15 @@
 </head>
 <body>
   <div class="container">
-    <a href="{% url 'project_detail' project.id %}" class="btn-back">&larr; Retour au projet</a>
-    <h1>Tableau de bord analytique : {{ project.name }}</h1>
+    <div class="header-bar">
+      <div class="header-left">
+        <a href="{% url 'project_detail' project.id %}" class="btn-back">&larr; Retour au projet</a>
+        <h1>Tableau de bord analytique : {{ project.name }}</h1>
+      </div>
+      <div class="action-buttons">
+        <a href="{% url 'project_stage3' project.id %}" class="btn-primary">Stage 3 – Communauté</a>
+      </div>
+    </div>
 
     <div class="card">
       <h2>Couverture des données</h2>
@@ -88,8 +101,8 @@
 
     <div class="chart-grid">
       <div class="card" style="grid-column: 1 / -1;">
-        <h2>Vue annuelle horaire</h2>
-        <p style="color: #6b7c93; margin-top: -0.5rem;">Agrégation horaire de la production et de la consommation sur l'année normalisée pour repérer les anomalies.</p>
+        <h2>Vue annuelle ({{ yearly_resolution }})</h2>
+        <p style="color: #6b7c93; margin-top: -0.5rem;">Agrégation {{ yearly_resolution }} de la production et de la consommation sur l'année normalisée pour repérer les anomalies.</p>
         <div id="yearly-chart"></div>
       </div>
     </div>
@@ -205,7 +218,22 @@
         tickAmount: 12,
         labels: {
           rotate: -45,
-          formatter: (value) => (typeof value === 'string' ? value.slice(0, 16) : '')
+          formatter: (value) => {
+            if (value === undefined || value === null) {
+              return '';
+            }
+            if (typeof value === 'string') {
+              return value.replace('T', ' ').slice(0, 16);
+            }
+            if (value && typeof value.slice === 'function') {
+              return value.slice(0, 16);
+            }
+            try {
+              return String(value).replace('T', ' ').slice(0, 16);
+            } catch (err) {
+              return '';
+            }
+          }
         }
       },
       yaxis: [{ title: { text: 'kWh' } }],

@@ -170,138 +170,185 @@ def member_create(request, project_id):
 
     elif data_mode == 'profile_based':
         profile_ids = request.POST.getlist('profiles')
-        annual_consumption = request.POST.get('annual_consumption_kwh')
-        annual_production = request.POST.get('annual_production_kwh')
+        raw_annual_consumption = request.POST.get('annual_consumption_kwh')
+        raw_annual_production = request.POST.get('annual_production_kwh')
 
         if not profile_ids:
             messages.error(request, "Veuillez sélectionner au moins un profil.")
             return redirect("project_detail", project_id=project_id)
-        if not (annual_consumption or annual_production):
-            messages.error(request, "Veuillez fournir une consommation ou production annuelle.")
+
+        def _parse_optional(value, label):
+            if value is None:
+                return None
+            value = value.strip()
+            if value == "":
+                return None
+            try:
+                return float(value.replace(",", "."))
+            except (TypeError, ValueError):
+                messages.error(request, f"Valeur numérique invalide pour {label}.")
+                raise
+
+        try:
+            annual_prod_value = _parse_optional(raw_annual_production or "", "la production annuelle")
+        except Exception:
             return redirect("project_detail", project_id=project_id)
 
         try:
-            annual_prod_value = float(annual_production) if annual_production else 0.0
-            annual_cons_value = float(annual_consumption) if annual_consumption else 0.0
+            annual_cons_value = _parse_optional(raw_annual_consumption or "", "la consommation annuelle")
+        except Exception:
+            return redirect("project_detail", project_id=project_id)
 
-            profiles = list(Profile.objects.filter(id__in=profile_ids))
-            if not profiles:
-                messages.error(request, "Aucun profil trouvé pour les identifiants sélectionnés.")
+        profiles = list(Profile.objects.filter(id__in=profile_ids))
+        if not profiles:
+            messages.error(request, "Aucun profil trouvé pour les identifiants sélectionnés.")
+            return redirect("project_detail", project_id=project_id)
+
+        production_series = None
+        consumption_series = None
+        production_base_total = 0.0
+        consumption_base_total = 0.0
+
+        for profile in profiles:
+            profile_df = pd.DataFrame(profile.points)
+            if "timestamp" not in profile_df or "value_kwh" not in profile_df:
+                messages.error(request, f"Le profil {profile.name} ne contient pas de données exploitables.")
                 return redirect("project_detail", project_id=project_id)
 
-            production_series = None
-            consumption_series = None
+            profile_df["timestamp"] = pd.to_datetime(profile_df["timestamp"], errors='coerce')
+            profile_df = profile_df.dropna(subset=["timestamp"])
+            profile_df = profile_df.sort_values("timestamp")
+            profile_series = profile_df.set_index("timestamp")["value_kwh"].astype(float).fillna(0.0)
 
-            for profile in profiles:
-                profile_df = pd.DataFrame(profile.points)
-                if "timestamp" not in profile_df or "value_kwh" not in profile_df:
-                    messages.error(request, f"Le profil {profile.name} ne contient pas de données exploitables.")
-                    return redirect("project_detail", project_id=project_id)
-
-                profile_df["timestamp"] = pd.to_datetime(profile_df["timestamp"], errors='coerce')
-                profile_df = profile_df.dropna(subset=["timestamp"])
-                profile_df = profile_df.sort_values("timestamp")
-                profile_df = profile_df.set_index("timestamp")["value_kwh"]
-
-                if profile.profile_type == "production":
-                    production_series = profile_df if production_series is None else production_series.add(profile_df, fill_value=0)
-                else:
-                    consumption_series = profile_df if consumption_series is None else consumption_series.add(profile_df, fill_value=0)
-
-            if annual_prod_value > 0 and production_series is None:
-                messages.warning(request, "Aucun profil de production n'a été sélectionné alors qu'une production annuelle est renseignée.")
-            if annual_cons_value > 0 and consumption_series is None:
-                messages.warning(request, "Aucun profil de consommation n'a été sélectionné alors qu'une consommation annuelle est renseignée.")
-
-            all_index = None
-            if production_series is not None:
-                all_index = production_series.index if all_index is None else all_index.union(production_series.index)
-            if consumption_series is not None:
-                all_index = consumption_series.index if all_index is None else all_index.union(consumption_series.index)
-
-            if all_index is None:
-                messages.error(request, "Impossible de générer la série temporelle : aucune donnée de profil valide.")
-                return redirect("project_detail", project_id=project_id)
-
-            all_index = all_index.sort_values()
-            generated_df = pd.DataFrame(index=all_index)
-
-            if production_series is not None and annual_prod_value > 0:
-                prod_sum = production_series.sum()
-                scale = annual_prod_value / prod_sum if prod_sum else 0.0
-                generated_df["Production"] = production_series.reindex(all_index, fill_value=0) * scale
+            if profile.profile_type == "production":
+                production_series = profile_series if production_series is None else production_series.add(profile_series, fill_value=0)
+                production_base_total += float(profile_series.sum())
             else:
-                generated_df["Production"] = 0.0
+                consumption_series = profile_series if consumption_series is None else consumption_series.add(profile_series, fill_value=0)
+                consumption_base_total += float(profile_series.sum())
 
-            if consumption_series is not None and annual_cons_value > 0:
-                cons_sum = consumption_series.sum()
-                scale = annual_cons_value / cons_sum if cons_sum else 0.0
-                generated_df["Consommation"] = consumption_series.reindex(all_index, fill_value=0) * scale
-            else:
-                generated_df["Consommation"] = 0.0
-
-            generated_df = generated_df.fillna(0.0)
-            generated_df.reset_index(inplace=True)
-            generated_df.rename(columns={"index": "Timestamp"}, inplace=True)
-
-            metadata_input = generated_df.rename(
-                columns={
-                    "Timestamp": "timestamp",
-                    "Production": "production_kwh",
-                    "Consommation": "consumption_kwh",
-                }
+        if annual_prod_value is None and production_series is not None and production_base_total > 0:
+            annual_prod_value = production_base_total
+            formatted_prod = f"{annual_prod_value:,.0f}".replace(",", "\u00a0")
+            messages.info(
+                request,
+                f"Production annuelle non renseignée : utilisation de la somme des profils ({formatted_prod} kWh).",
             )
-            metadata = asdict(
-                build_metadata(
-                    metadata_input,
-                    {
-                        "timestamp": "timestamp",
-                        "production": "production_kwh",
-                        "consumption": "consumption_kwh",
-                    },
-                    file_type="generated_from_profiles",
-                )
+        if annual_cons_value is None and consumption_series is not None and consumption_base_total > 0:
+            annual_cons_value = consumption_base_total
+            formatted_cons = f"{annual_cons_value:,.0f}".replace(",", "\u00a0")
+            messages.info(
+                request,
+                f"Consommation annuelle non renseignée : utilisation de la somme des profils ({formatted_cons} kWh).",
             )
 
-            price_default = Member._meta.get_field("current_unit_price_eur_per_kwh").default
-            fixed_default = Member._meta.get_field("current_fixed_fee_eur").default
-            inj_qty_default = Member._meta.get_field("injection_annual_kwh").default
-            inj_price_default = Member._meta.get_field("injection_unit_price_eur_per_kwh").default
+        if production_series is None and (annual_prod_value or 0) > 0:
+            messages.warning(request, "Aucun profil de production n'a été sélectionné alors qu'une production annuelle est renseignée.")
+        if consumption_series is None and (annual_cons_value or 0) > 0:
+            messages.warning(request, "Aucun profil de consommation n'a été sélectionné alors qu'une consommation annuelle est renseignée.")
 
-            member = Member(
-                project=project,
-                name=request.POST.get('name'),
-                utility=request.POST.get('utility', ''),
-                data_mode='timeseries_csv',
-                annual_consumption_kwh=(annual_cons_value if annual_consumption else None),
-                annual_production_kwh=(annual_prod_value if annual_production else None),
-                timeseries_metadata=metadata,
-                current_unit_price_eur_per_kwh=_parse_float(
-                    request.POST.get('current_unit_price_eur_per_kwh'), price_default
-                ),
-                current_fixed_fee_eur=_parse_float(
-                    request.POST.get('current_fixed_fee_eur'), fixed_default
-                ),
-                injection_annual_kwh=_parse_float(
-                    request.POST.get('injection_annual_kwh'), inj_qty_default
-                ),
-                injection_unit_price_eur_per_kwh=_parse_float(
-                    request.POST.get('injection_unit_price_eur_per_kwh'), inj_price_default
-                ),
+        all_index = None
+        if production_series is not None:
+            all_index = production_series.index if all_index is None else all_index.union(production_series.index)
+        if consumption_series is not None:
+            all_index = consumption_series.index if all_index is None else all_index.union(consumption_series.index)
+
+        if all_index is None:
+            messages.error(request, "Impossible de générer la série temporelle : aucune donnée de profil valide.")
+            return redirect("project_detail", project_id=project_id)
+
+        all_index = all_index.sort_values()
+        generated_df = pd.DataFrame(index=all_index)
+
+        if production_series is not None and (annual_prod_value or 0) > 0:
+            prod_sum = production_series.sum()
+            scale = (annual_prod_value or 0.0) / prod_sum if prod_sum else 0.0
+            generated_df["Production"] = production_series.reindex(all_index, fill_value=0) * scale
+        else:
+            generated_df["Production"] = 0.0
+
+        if consumption_series is not None and (annual_cons_value or 0) > 0:
+            cons_sum = consumption_series.sum()
+            scale = (annual_cons_value or 0.0) / cons_sum if cons_sum else 0.0
+            generated_df["Consommation"] = consumption_series.reindex(all_index, fill_value=0) * scale
+        else:
+            generated_df["Consommation"] = 0.0
+
+        generated_df = generated_df.fillna(0.0)
+        generated_df.reset_index(inplace=True)
+        generated_df.rename(columns={"index": "Timestamp"}, inplace=True)
+
+        metadata_input = generated_df.rename(
+            columns={
+                "Timestamp": "timestamp",
+                "Production": "production_kwh",
+                "Consommation": "consumption_kwh",
+            }
+        )
+        metadata = asdict(
+            build_metadata(
+                metadata_input,
+                {
+                    "timestamp": "timestamp",
+                    "production": "production_kwh",
+                    "consumption": "consumption_kwh",
+                },
+                file_type="generated_from_profiles",
             )
+        )
+
+        price_default = Member._meta.get_field("current_unit_price_eur_per_kwh").default
+        fixed_default = Member._meta.get_field("current_fixed_fee_eur").default
+        inj_qty_default = Member._meta.get_field("injection_annual_kwh").default
+        inj_price_default = Member._meta.get_field("injection_unit_price_eur_per_kwh").default
+
+        member = Member(
+            project=project,
+            name=request.POST.get('name'),
+            utility=request.POST.get('utility', ''),
+            data_mode='timeseries_csv',
+            annual_consumption_kwh=annual_cons_value if annual_cons_value is not None else None,
+            annual_production_kwh=annual_prod_value if annual_prod_value is not None else None,
+            timeseries_metadata=metadata,
+            current_unit_price_eur_per_kwh=_parse_float(
+                request.POST.get('current_unit_price_eur_per_kwh'), price_default
+            ),
+            current_fixed_fee_eur=_parse_float(
+                request.POST.get('current_fixed_fee_eur'), fixed_default
+            ),
+            injection_annual_kwh=_parse_float(
+                request.POST.get('injection_annual_kwh'), inj_qty_default
+            ),
+            injection_unit_price_eur_per_kwh=_parse_float(
+                request.POST.get('injection_unit_price_eur_per_kwh'), inj_price_default
+            ),
+        )
+        member.save()
+
+        output = io.StringIO()
+        generated_df.to_csv(output, index=False)
+        csv_file = ContentFile(output.getvalue().encode('utf-8'))
+        member.timeseries_file.save(f"generated_{member.id}.csv", csv_file, save=True)
+
+        try:
+            regenerated = parse_member_timeseries(member.timeseries_file.path)
+            member.timeseries_metadata = asdict(regenerated.metadata)
+            totals = regenerated.metadata.totals
+            if member.annual_consumption_kwh is None and totals.get('consumption_kwh'):
+                member.annual_consumption_kwh = totals.get('consumption_kwh')
+            if member.annual_production_kwh is None and totals.get('production_kwh'):
+                member.annual_production_kwh = totals.get('production_kwh')
             member.save()
+        except TimeseriesError as exc:
+            messages.warning(request, f"Le fichier généré n'a pas pu être relu pour vérifier les totaux : {exc}")
 
-            output = io.StringIO()
-            generated_df.to_csv(output, index=False)
-            csv_file = ContentFile(output.getvalue().encode('utf-8'))
-            member.timeseries_file.save(f"generated_{member.id}.csv", csv_file, save=True)
-
-            messages.success(request, f"Le membre '{member.name}' a été créé avec un profil annualisé ({metadata.get('row_count')} points).")
-
-        except Exception as e:
-            messages.error(request, f"Une erreur est survenue : {e}")
+        messages.success(
+            request,
+            f"Le membre '{member.name}' a été créé avec un profil annualisé ({metadata.get('row_count')} points).",
+        )
 
         return redirect("project_detail", project_id=project.id)
+
 
     return HttpResponseBadRequest("Mode de données non valide.")
 
@@ -472,13 +519,39 @@ def project_analysis_page(request, project_id):
         'consumption': recent_daily['consumption_kwh'].round(2).tolist(),
     }
 
-    hourly_totals = totals_by_instant.resample('H').sum()
-    yearly_categories = [dt.strftime('%Y-%m-%d %H:%M') for dt in hourly_totals.index]
+    yearly_freq = 'H'
+    yearly_totals = totals_by_instant.resample(yearly_freq).sum()
+    if len(yearly_totals) > 2000:
+        for freq_candidate in ['2H', '3H', '4H', '6H', '8H', '12H', 'D']:
+            candidate = totals_by_instant.resample(freq_candidate).sum()
+            if len(candidate) <= 2000:
+                yearly_totals = candidate
+                yearly_freq = freq_candidate
+                break
+        else:
+            yearly_totals = totals_by_instant.resample('7D').sum()
+            yearly_freq = '7D'
+
+    date_format = '%Y-%m-%d %H:%M' if 'H' in yearly_freq else '%Y-%m-%d'
+    yearly_categories = [dt.strftime(date_format) for dt in yearly_totals.index]
     yearly_series = {
-        'production': hourly_totals['production_kwh'].round(2).tolist(),
-        'consumption': hourly_totals['consumption_kwh'].round(2).tolist(),
-        'net': (hourly_totals['production_kwh'] - hourly_totals['consumption_kwh']).round(2).tolist(),
+        'production': yearly_totals['production_kwh'].round(2).tolist(),
+        'consumption': yearly_totals['consumption_kwh'].round(2).tolist(),
+        'net': (yearly_totals['production_kwh'] - yearly_totals['consumption_kwh']).round(2).tolist(),
     }
+
+    freq_labels = {
+        'H': '1 h',
+        '2H': '2 h',
+        '3H': '3 h',
+        '4H': '4 h',
+        '6H': '6 h',
+        '8H': '8 h',
+        '12H': '12 h',
+        'D': '1 jour',
+        '7D': '7 jours',
+    }
+    yearly_resolution = freq_labels.get(yearly_freq, yearly_freq)
 
     avg_profile = totals_by_instant.groupby(totals_by_instant.index.time).mean()
     avg_profile_index = [time.strftime('%H:%M') for time in avg_profile.index]
@@ -533,6 +606,7 @@ def project_analysis_page(request, project_id):
         'daily_series': json.dumps(daily_series),
         'yearly_categories': json.dumps(yearly_categories),
         'yearly_series': json.dumps(yearly_series),
+        'yearly_resolution': yearly_resolution,
         'avg_profile_categories': json.dumps(avg_profile_index),
         'avg_profile_series': json.dumps(avg_profile_series),
         'aggregate_metadata': aggregate_metadata,

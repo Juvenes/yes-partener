@@ -1,7 +1,10 @@
+from datetime import datetime, timedelta
+
 from django.test import TestCase
+from django.urls import reverse
 
 from .forms import StageThreeScenarioForm, StageThreeScenarioMemberForm
-from .models import Member, Project, StageThreeScenario
+from .models import Member, Profile, Project, StageThreeScenario
 from .stage3 import (
     ShareConstraint,
     build_member_inputs,
@@ -10,6 +13,52 @@ from .stage3 import (
     optimize_member_cost,
     optimize_total_cost,
 )
+
+
+class ProfileBasedMemberGenerationTests(TestCase):
+    def setUp(self):
+        self.project = Project.objects.create(name="Profil Project")
+        start = datetime(2024, 1, 1, 0, 15)
+        points = []
+        for i in range(4):
+            points.append({
+                "timestamp": (start + timedelta(minutes=15 * i)).isoformat(),
+                "value_kwh": 0.25,
+            })
+        self.production_profile = Profile.objects.create(
+            name="Profil production test",
+            profile_type="production",
+            points=points,
+            metadata={"row_count": len(points)},
+        )
+
+    def test_profile_generation_defaults_to_profile_sum(self):
+        url = reverse("member_create", args=[self.project.id])
+        response = self.client.post(
+            url,
+            {
+                "name": "Producteur",
+                "utility": "Site pilote",
+                "data_mode": "profile_based",
+                "profiles": [str(self.production_profile.id)],
+                "annual_consumption_kwh": "",
+                "annual_production_kwh": "",
+                "current_unit_price_eur_per_kwh": "0.25",
+                "current_fixed_fee_eur": "0",
+                "injection_annual_kwh": "0",
+                "injection_unit_price_eur_per_kwh": "0.05",
+            },
+        )
+        self.assertRedirects(response, reverse("project_detail", args=[self.project.id]))
+        member = Member.objects.get(project=self.project, name="Producteur")
+        self.assertTrue(member.timeseries_file.name.endswith(".csv"))
+        metadata = member.timeseries_metadata
+        self.assertGreater(metadata["totals"]["production_kwh"], 0)
+        self.assertAlmostEqual(
+            metadata["totals"]["production_kwh"],
+            member.annual_production_kwh,
+            places=3,
+        )
 
 
 class StageThreeCalculatorTests(TestCase):
