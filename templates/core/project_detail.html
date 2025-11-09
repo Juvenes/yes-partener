@@ -25,7 +25,10 @@
   <p><a href="{% url 'project_list' %}">&larr; Retour aux projets</a></p>
   <div style="display: flex; justify-content: space-between; align-items: center;">
       <h1>{{ project.name }} — Phase 1 : Ingestion</h1>
-      <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="text-decoration: none;">Analyser le projet &rarr;</a>
+      <div style="display: flex; gap: 0.75rem;">
+        <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="text-decoration: none;">Analyser le projet &rarr;</a>
+        <a href="{% url 'stage_three' project.id %}" class="btn" style="text-decoration: none; background: #0d6efd;">Stage 3 &rarr;</a>
+      </div>
   </div>
 
   {% if messages %}
@@ -72,6 +75,19 @@
           <label>Total prod. annuelle (kWh)</label>
           <input class="input" step="0.01" min="0" type="number" name="annual_production_kwh" placeholder="Ex: 12000">
         </div>
+
+        <h3 style="margin-top:1.5rem;">Données financières (Stage 3)</h3>
+        <label>Prix actuel (€ / kWh)</label>
+        <input class="input" type="number" step="0.0001" min="0" name="current_unit_price_eur_per_kwh" value="0">
+
+        <label>Frais fixes annuels (€)</label>
+        <input class="input" type="number" step="0.01" min="0" name="current_fixed_annual_fee_eur" value="0">
+
+        <label>Énergie injectée (kWh)</label>
+        <input class="input" type="number" step="0.01" min="0" name="injected_energy_kwh" value="0">
+
+        <label>Tarif d'injection (€ / kWh)</label>
+        <input class="input" type="number" step="0.0001" min="0" name="injection_price_eur_per_kwh" value="0">
 
         <button class="btn" type="submit" style="margin-top:1rem; width: 100%;">Créer le membre</button>
       </form>

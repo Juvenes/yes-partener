@@ -50,6 +50,32 @@ class Member(models.Model):
     # Mode: profile_based
     annual_consumption_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
     annual_production_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
+
+    # Stage 3 – financial data
+    current_unit_price_eur_per_kwh = models.FloatField(
+        "Current unit price (€/kWh)",
+        default=0.0,
+        blank=True,
+        validators=[MinValueValidator(0.0)],
+    )
+    current_fixed_annual_fee_eur = models.FloatField(
+        "Current fixed annual fee (€)",
+        default=0.0,
+        blank=True,
+        validators=[MinValueValidator(0.0)],
+    )
+    injected_energy_kwh = models.FloatField(
+        "Injected energy (kWh)",
+        default=0.0,
+        blank=True,
+        validators=[MinValueValidator(0.0)],
+    )
+    injection_price_eur_per_kwh = models.FloatField(
+        "Injection price (€/kWh)",
+        default=0.0,
+        blank=True,
+        validators=[MinValueValidator(0.0)],
+    )
     
     class Meta:
         unique_together = ("project", "name")

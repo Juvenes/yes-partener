@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8" />
+    <title>{{ project.name }} – Stage 3 : Communauté énergétique</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1200px; background-color: #f9f9f9; }
+        h1 { margin-bottom: 0.5rem; }
+        a.btn { text-decoration: none; }
+        .btn { padding: .75rem 1.25rem; border-radius: 8px; border: none; background: #222; color: #fff; cursor: pointer; font-size: 1rem; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-secondary { background: #0d6efd; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; }
+        .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.5rem; background-color: #fff; }
+        label { display: block; margin-top: 1rem; font-weight: 600; }
+        input[type="number"], input[type="text"], select { padding: .75rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; box-sizing: border-box; font-size: 1rem; margin-top: 0.35rem; }
+        table { width:100%; border-collapse: collapse; font-size: 0.98rem; }
+        th, td { border-bottom: 1px solid #eee; padding: 0.75rem 0.5rem; text-align: left; }
+        th { background: #fafafa; font-weight: 600; color: #444; }
+        .muted { color: #666; font-size: .9rem; }
+        .messages { list-style: none; padding: 0; margin-bottom: 1rem; }
+        .messages li { padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; }
+        .messages li.error { background-color: #ffebee; color: #c62828; }
+        .messages li.warning { background-color: #fff8e1; color: #8a6d3b; }
+        .messages li.success { background-color: #e8f5e9; color: #2e7d32; }
+        .two-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+        .summary { display: grid; gap: 0.5rem; }
+        .summary strong { font-size: 1.1rem; }
+        .chip { display: inline-block; padding: 0.4rem 0.75rem; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 0.85rem; }
+        .table-wrapper { overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <p><a href="{% url 'project_detail' project.id %}">&larr; Retour au projet</a></p>
+    <div style="display:flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
+        <div>
+            <h1>{{ project.name }} — Stage 3</h1>
+            <p class="muted">Comparer la situation actuelle et une communauté énergétique.</p>
+        </div>
+        <div style="display:flex; gap: 0.75rem; flex-wrap: wrap;">
+            <a class="btn" href="{% url 'project_analysis_page' project.id %}">Analyse temporelle</a>
+            <a class="btn btn-secondary" href="{% url 'project_detail' project.id %}">Gestion des membres</a>
+        </div>
+    </div>
+
+    {% if messages %}
+      <ul class="messages">
+        {% for message in messages %}
+          <li class="{{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if not member_overviews %}
+        <div class="card" style="margin-top: 1.5rem;">
+            <h2>Pas encore de membres</h2>
+            <p>Ajoutez des membres au projet et renseignez leurs données financières pour démarrer les simulations de Stage 3.</p>
+        </div>
+    {% else %}
+    <div class="grid" style="margin-top: 1.5rem;">
+        <div class="card">
+            <h2>Paramètres du scénario</h2>
+            <form method="post">
+                {% csrf_token %}
+                {% if form.errors %}
+                    <ul class="messages">
+                        {% for error in form.non_field_errors %}
+                            <li class="error">{{ error }}</li>
+                        {% endfor %}
+                        {% for field in form %}
+                            {% for error in field.errors %}
+                                <li class="error">{{ field.label }} : {{ error }}</li>
+                            {% endfor %}
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+                <label for="id_scenario_name">Nom du scénario</label>
+                {{ form.scenario_name }}
+
+                <div class="two-columns" style="margin-top: 1rem;">
+                    <div>
+                        <label for="id_community_price">Prix communautaire (€/kWh)</label>
+                        {{ form.community_price }}
+                    </div>
+                    <div>
+                        <label for="id_community_individual_fee">Frais individuels (€)</label>
+                        {{ form.community_individual_fee }}
+                    </div>
+                    <div>
+                        <label for="id_community_fixed_fee_total">Frais fixes partagés (€)</label>
+                        {{ form.community_fixed_fee_total }}
+                    </div>
+                    <div>
+                        <label for="id_optimization_objective">Objectif</label>
+                        {{ form.optimization_objective }}
+                    </div>
+                </div>
+
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:1.25rem;">
+                    {{ form.enable_price_range }} <span>Explorer une plage de prix</span>
+                </label>
+
+                <div class="two-columns">
+                    <div>
+                        <label for="id_community_price_min">Prix min. (€/kWh)</label>
+                        {{ form.community_price_min }}
+                    </div>
+                    <div>
+                        <label for="id_community_price_max">Prix max. (€/kWh)</label>
+                        {{ form.community_price_max }}
+                    </div>
+                    <div>
+                        <label for="id_price_step">Pas (€/kWh)</label>
+                        {{ form.price_step }}
+                    </div>
+                    <div>
+                        <label for="id_target_member">Membre ciblé</label>
+                        {{ form.target_member }}
+                    </div>
+                </div>
+
+                <h3 style="margin-top:1.5rem;">Part de consommation couverte par la communauté</h3>
+                <div class="two-columns">
+                    {% for field_name, member in form.coverage_fields %}
+                        <div>
+                            <label for="id_{{ field_name }}">{{ member.name }}</label>
+                            {{ form[field_name] }}
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <h3 style="margin-top:1.5rem;">Composants tarifaires (€/MWh)</h3>
+                <div class="two-columns">
+                    <div>
+                        <label for="id_distribution_cost_eur_per_mwh">Distribution</label>
+                        {{ form.distribution_cost_eur_per_mwh }}
+                    </div>
+                    <div>
+                        <label for="id_transport_cost_eur_per_mwh">Transport</label>
+                        {{ form.transport_cost_eur_per_mwh }}
+                    </div>
+                    <div>
+                        <label for="id_green_surcharge_eur_per_mwh">Énergie verte</label>
+                        {{ form.green_surcharge_eur_per_mwh }}
+                    </div>
+                    <div>
+                        <label for="id_connection_fee_eur_per_mwh">Raccordement</label>
+                        {{ form.connection_fee_eur_per_mwh }}
+                    </div>
+                    <div>
+                        <label for="id_excise_tax_eur_per_mwh">Accise</label>
+                        {{ form.excise_tax_eur_per_mwh }}
+                    </div>
+                    <div>
+                        <label for="id_federal_tax_eur_per_mwh">Cotisation fédérale</label>
+                        {{ form.federal_tax_eur_per_mwh }}
+                    </div>
+                    <div>
+                        <label for="id_community_management_fee_eur_per_mwh">Gestion communauté</label>
+                        {{ form.community_management_fee_eur_per_mwh }}
+                    </div>
+                </div>
+
+                <button class="btn" type="submit" style="margin-top: 1.5rem; width: 100%;">Lancer l'évaluation</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Données actuelles des membres</h2>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Membre</th>
+                            <th>Conso. annuelle (kWh)</th>
+                            <th>Prix énergie (€/kWh)</th>
+                            <th>Coût total (€/kWh)</th>
+                            <th>Frais fixes actuels (€)</th>
+                            <th>Injection (kWh)</th>
+                            <th>Tarif injection (€/kWh)</th>
+                            <th>Coût actuel annuel (€)</th>
+                            <th>Coût actuel (€/kWh)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for member in member_overviews %}
+                        <tr>
+                            <td>{{ member.name }}</td>
+                            <td>{{ member.annual_consumption_kwh|floatformat:2 }}</td>
+                            <td>{{ member.energy_price_component_eur_per_kwh|floatformat:4 }}</td>
+                            <td>{{ member.traditional_unit_cost_eur_per_kwh|floatformat:4 }}</td>
+                            <td>{{ member.current_fixed_annual_fee_eur|floatformat:2 }}</td>
+                            <td>{{ member.injected_energy_kwh|floatformat:2 }}</td>
+                            <td>{{ member.injection_price_eur_per_kwh|floatformat:4 }}</td>
+                            <td>{{ member.current_cost|floatformat:2 }}</td>
+                            <td>{% if member.current_cost_per_kwh %}{{ member.current_cost_per_kwh|floatformat:4 }}{% else %}&mdash;{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if scenario_result %}
+    <div class="card" style="margin-top: 2rem;">
+        <h2>Résultats du scénario « {{ scenario_result.scenario.name }} »</h2>
+        <div class="summary" style="margin-bottom: 1.5rem;">
+            <span class="chip">Prix communautaire appliqué : {{ scenario_result.applied_price|floatformat:4 }} €/kWh</span>
+            {% if scenario_result.optimization_details.metric_label %}
+                <span class="chip">Objectif : {{ scenario_result.optimization_details.metric_label }} — {{ scenario_result.optimization_details.metric_value|floatformat:2 }}</span>
+            {% endif %}
+            {% if scenario_result.optimization_details.target_member_id %}
+                {% for result in scenario_result.member_results %}
+                    {% if result.member_id == scenario_result.optimization_details.target_member_id %}
+                        <span class="chip">Membre optimisé : {{ result.member_name }}</span>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+            <strong>Économie totale : {{ scenario_result.summary.total_annual_savings|floatformat:2 }} €</strong>
+            <span>Coût actuel total : {{ scenario_result.summary.total_current_cost|floatformat:2 }} €</span>
+            <span>Coût en communauté : {{ scenario_result.summary.total_community_cost|floatformat:2 }} €</span>
+            <span>Économie moyenne par membre : {{ scenario_result.summary.average_savings_per_member|floatformat:2 }} €</span>
+            {% if scenario_result.summary.average_cost_per_kwh_current %}
+                <span>Coût moyen actuel : {{ scenario_result.summary.average_cost_per_kwh_current|floatformat:4 }} €/kWh</span>
+            {% endif %}
+            {% if scenario_result.summary.average_cost_per_kwh_community %}
+                <span>Coût moyen en communauté : {{ scenario_result.summary.average_cost_per_kwh_community|floatformat:4 }} €/kWh</span>
+            {% endif %}
+        </div>
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Membre</th>
+                        <th>Couverture communauté (%)</th>
+                        <th>Coût actuel (€)</th>
+                        <th>Coût communauté (€)</th>
+                        <th>Économie (€)</th>
+                        <th>Coût actuel (€/kWh)</th>
+                        <th>Coût communauté (€/kWh)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for result in scenario_result.member_results %}
+                    <tr>
+                        <td>{{ result.member_name }}</td>
+                        <td>{{ result.coverage_percentage|floatformat:2 }}</td>
+                        <td>{{ result.current_cost|floatformat:2 }}</td>
+                        <td>{{ result.community_cost|floatformat:2 }}</td>
+                        <td>{{ result.savings|floatformat:2 }}</td>
+                        <td>{% if result.current_cost_per_kwh %}{{ result.current_cost_per_kwh|floatformat:4 }}{% else %}&mdash;{% endif %}</td>
+                        <td>{% if result.community_cost_per_kwh %}{{ result.community_cost_per_kwh|floatformat:4 }}{% else %}&mdash;{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+</body>
+</html>

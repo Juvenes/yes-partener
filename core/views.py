@@ -2,7 +2,15 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_http_methods
 from django.http import HttpResponseBadRequest, HttpResponse
 from .models import Project, Member, MemberProfile, Profile, GlobalParameter
-from .forms import ProjectForm, MemberForm, MemberProfileForm, ProfileForm, GlobalParameterForm
+from .forms import (
+    ProjectForm,
+    MemberForm,
+    MemberProfileForm,
+    ProfileForm,
+    GlobalParameterForm,
+    CommunityScenarioForm,
+)
+from .stage3 import MemberFinancials, run_stage_three, DEFAULT_TARIFFS
 import csv
 from datetime import datetime, timedelta
 import json
@@ -135,7 +143,11 @@ def member_create(request, project_id):
                 utility=request.POST.get('utility', ''),
                 data_mode='timeseries_csv',
                 annual_consumption_kwh=(float(annual_consumption) if annual_consumption else None),
-                annual_production_kwh=(float(annual_production) if annual_production else None)
+                annual_production_kwh=(float(annual_production) if annual_production else None),
+                current_unit_price_eur_per_kwh=float(request.POST.get('current_unit_price_eur_per_kwh') or 0.0),
+                current_fixed_annual_fee_eur=float(request.POST.get('current_fixed_annual_fee_eur') or 0.0),
+                injected_energy_kwh=float(request.POST.get('injected_energy_kwh') or 0.0),
+                injection_price_eur_per_kwh=float(request.POST.get('injection_price_eur_per_kwh') or 0.0),
             )
             member.save()
             csv_file = ContentFile(output.getvalue().encode('utf-8'))
@@ -297,3 +309,37 @@ def project_analysis_page(request, project_id):
     }
 
     return render(request, "core/project_analysis.html", context)
+
+
+def stage_three(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    members = list(project.members.all())
+    member_financials = [MemberFinancials.from_member(m) for m in members]
+
+    form = CommunityScenarioForm(members=members, data=request.POST or None)
+    scenario_result = None
+    tariffs_for_display = DEFAULT_TARIFFS
+
+    if request.method == "POST":
+        if form.is_valid():
+            scenario = form.build_scenario()
+            scenario_result = run_stage_three(member_financials, scenario)
+            if scenario_result is None:
+                messages.warning(request, "Unable to compute the scenario. Please ensure members have consumption data.")
+            else:
+                tariffs_for_display = scenario.tariffs
+        else:
+            messages.error(request, "Please correct the errors below before running Stage 3 analysis.")
+
+    member_overviews = [mf.with_tariffs(tariffs_for_display).build_overview() for mf in member_financials]
+
+    return render(
+        request,
+        "core/stage_three.html",
+        {
+            "project": project,
+            "form": form,
+            "member_overviews": member_overviews,
+            "scenario_result": scenario_result,
+        },
+    )
