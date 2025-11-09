@@ -1,4 +1,6 @@
+import os
 from datetime import datetime, timedelta
+from tempfile import NamedTemporaryFile
 
 from django.test import TestCase
 from django.urls import reverse
@@ -13,6 +15,56 @@ from .stage3 import (
     optimize_member_cost,
     optimize_total_cost,
 )
+from .timeseries import parse_profile_timeseries
+
+
+class ProfileParsingTests(TestCase):
+    def _make_csv(self, header, rows):
+        tmp = NamedTemporaryFile(mode="w+", suffix=".csv", delete=False)
+        tmp.write(header + "\n")
+        for row in rows:
+            tmp.write(";".join(row) + "\n")
+        tmp.flush()
+        return tmp
+
+    def test_consumption_profile_prefers_thousand_column(self):
+        tmp = self._make_csv(
+            "Date;Conso (1 kWh);Conso 1000kWh",
+            [
+                ("2022-01-01 00:15", "0.001", "1.0"),
+                ("2022-01-01 00:30", "0.002", "2.0"),
+                ("2022-01-01 00:45", "0.003", "3.0"),
+            ],
+        )
+        try:
+            result = parse_profile_timeseries(tmp.name, "consumption")
+        finally:
+            tmp.close()
+            os.unlink(tmp.name)
+
+        self.assertAlmostEqual(sum(result.data["value_kwh"]), 6.0)
+        self.assertEqual(result.metadata.detected_columns["value"], "Conso 1000kWh")
+        self.assertAlmostEqual(result.metadata.totals["consumption_kwh"], 6.0)
+        self.assertEqual(result.metadata.totals["production_kwh"], 0.0)
+
+    def test_production_profile_prefers_non_thousand_column(self):
+        tmp = self._make_csv(
+            "Date;Prod (1 kWh);Prod 1000KWh",
+            [
+                ("2022-01-01 00:15", "0.5", "500"),
+                ("2022-01-01 00:30", "0.75", "750"),
+            ],
+        )
+        try:
+            result = parse_profile_timeseries(tmp.name, "production")
+        finally:
+            tmp.close()
+            os.unlink(tmp.name)
+
+        self.assertAlmostEqual(sum(result.data["value_kwh"]), 1.25)
+        self.assertEqual(result.metadata.detected_columns["value"], "Prod (1 kWh)")
+        self.assertAlmostEqual(result.metadata.totals["production_kwh"], 1.25)
+        self.assertEqual(result.metadata.totals["consumption_kwh"], 0.0)
 
 
 class ProfileBasedMemberGenerationTests(TestCase):

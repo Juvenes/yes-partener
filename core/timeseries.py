@@ -103,17 +103,31 @@ def parse_profile_timeseries(source: Readable, profile_type: str) -> TimeseriesR
     if not numeric_cols:
         raise TimeseriesError("Le fichier de profil ne contient aucune colonne numérique.")
 
-    preferred = _prefer_profile_column(numeric_cols)
+    preferred = _select_profile_column(profile_type, numeric_cols)
     df = frame[[timestamp_col, preferred]].rename(
         columns={timestamp_col: "timestamp", preferred: "value_kwh"}
     )
     df["timestamp"], normalized_year = _normalise_to_reference_year(df["timestamp"])
     df["value_kwh"] = _to_float_series(df["value_kwh"])
 
-    totals = {"value_kwh": float(df["value_kwh"].sum())}
+    value_total = float(df["value_kwh"].sum())
+    if profile_type == "production":
+        metadata_frame = df.assign(production_kwh=df["value_kwh"], consumption_kwh=0.0)
+        totals = {
+            "value_kwh": value_total,
+            "production_kwh": value_total,
+            "consumption_kwh": 0.0,
+        }
+    else:
+        metadata_frame = df.assign(production_kwh=0.0, consumption_kwh=df["value_kwh"])
+        totals = {
+            "value_kwh": value_total,
+            "production_kwh": 0.0,
+            "consumption_kwh": value_total,
+        }
 
     metadata = build_metadata(
-        df.assign(production_kwh=df.get("value_kwh", 0.0), consumption_kwh=0.0),
+        metadata_frame,
         {"timestamp": timestamp_col, "value": preferred},
         file_type=f"profile_{profile_type}",
         totals_override=totals,
@@ -208,10 +222,45 @@ def _identify_energy_columns(columns: List[str]) -> Tuple[Optional[str], Optiona
     return production, consumption
 
 
-def _prefer_profile_column(columns: List[str]) -> str:
-    clean = [c for c in columns if "1000" not in c.lower() and "mwh" not in c.lower()]
-    if clean:
-        return clean[0]
+def _select_profile_column(profile_type: str, columns: List[str]) -> str:
+    lowered = {col: col.lower() for col in columns}
+
+    def _matches(col: str, keywords: Iterable[str]) -> bool:
+        return any(keyword in lowered[col] for keyword in keywords)
+
+    thousand_cols = [
+        col for col in columns if "1000" in lowered[col] or "mwh" in lowered[col]
+    ]
+    base_cols = [col for col in columns if col not in thousand_cols]
+
+    if profile_type == "consumption":
+        preference_groups = [
+            [col for col in thousand_cols if _matches(col, CONSUMPTION_KEYWORDS)],
+            thousand_cols,
+            [col for col in base_cols if _matches(col, CONSUMPTION_KEYWORDS)],
+            base_cols,
+        ]
+    elif profile_type == "production":
+        preference_groups = [
+            [col for col in base_cols if _matches(col, PRODUCTION_KEYWORDS)],
+            [col for col in columns if _matches(col, PRODUCTION_KEYWORDS)],
+            base_cols,
+        ]
+    else:
+        preference_groups = [
+            [
+                col
+                for col in base_cols
+                if _matches(col, PRODUCTION_KEYWORDS + CONSUMPTION_KEYWORDS)
+            ],
+            base_cols,
+            thousand_cols,
+        ]
+
+    for group in preference_groups:
+        if group:
+            return group[0]
+
     return columns[0]
 
 

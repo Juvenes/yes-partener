@@ -25,6 +25,7 @@
     .kpi-value { font-size: 2.5rem; font-weight: 700; color: #1a253c; }
     .kpi-label { font-size: 1rem; color: #6b7c93; margin-top: 0.35rem; }
     .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 2rem; }
+    .input-select { padding: .65rem 1rem; border-radius: 8px; border: 1px solid #cfd6e3; font-size: 1rem; }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 0.85rem 0.5rem; border-bottom: 1px solid #e6ecf5; }
     th { color: #5f6c85; font-weight: 600; }
@@ -99,12 +100,13 @@
       <div id="monthly-chart"></div>
     </div>
 
-    <div class="chart-grid">
-      <div class="card" style="grid-column: 1 / -1;">
-        <h2>Vue annuelle ({{ yearly_resolution }})</h2>
-        <p style="color: #6b7c93; margin-top: -0.5rem;">Agrégation {{ yearly_resolution }} de la production et de la consommation sur l'année normalisée pour repérer les anomalies.</p>
-        <div id="yearly-chart"></div>
+    <div class="card" style="margin-top: 2rem;">
+      <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <h2>Exploration détaillée par mois</h2>
+        <select id="month-select" class="input-select"></select>
       </div>
+      <p style="color: #6b7c93; margin: 0.75rem 0 1.5rem;">Sélectionnez un mois pour visualiser la production et la consommation journalières sans charger l'ensemble de l'année.</p>
+      <div id="monthly-detail-chart"></div>
     </div>
 
     <div class="chart-grid">
@@ -169,8 +171,7 @@
     const monthlySeries = {{ monthly_series|safe }};
     const dailyCategories = {{ daily_categories|safe }};
     const dailySeries = {{ daily_series|safe }};
-    const yearlyCategories = {{ yearly_categories|safe }};
-    const yearlySeries = {{ yearly_series|safe }};
+    const monthlyDetail = {{ monthly_detail|default:'[]'|safe }};
     const avgProfileCategories = {{ avg_profile_categories|safe }};
     const avgProfileSeries = {{ avg_profile_series|safe }};
     const pieProducers = {{ pie_producers|safe }};
@@ -204,43 +205,70 @@
     });
     dailyChart.render();
 
-    const yearlyChart = new ApexCharts(document.querySelector('#yearly-chart'), {
-      series: [
-        { name: 'Production', type: 'line', data: yearlySeries.production },
-        { name: 'Consommation', type: 'line', data: yearlySeries.consumption },
-        { name: 'Solde net', type: 'area', data: yearlySeries.net }
-      ],
-      chart: { type: 'line', height: 420, stacked: false, zoom: { enabled: true } },
-      stroke: { curve: 'straight', width: [2, 2, 1], dashArray: [0, 0, 4] },
-      fill: { opacity: [0, 0, 0.18] },
-      xaxis: {
-        categories: yearlyCategories,
-        tickAmount: 12,
-        labels: {
-          rotate: -45,
-          formatter: (value) => {
-            if (value === undefined || value === null) {
-              return '';
-            }
-            if (typeof value === 'string') {
-              return value.replace('T', ' ').slice(0, 16);
-            }
-            if (value && typeof value.slice === 'function') {
-              return value.slice(0, 16);
-            }
-            try {
-              return String(value).replace('T', ' ').slice(0, 16);
-            } catch (err) {
-              return '';
-            }
-          }
-        }
-      },
-      yaxis: [{ title: { text: 'kWh' } }],
-      dataLabels: { enabled: false },
-      tooltip: { shared: true }
-    });
-    yearlyChart.render();
+    const monthSelect = document.querySelector('#month-select');
+    const monthChartContainer = document.querySelector('#monthly-detail-chart');
+    let monthChart = null;
+
+    function renderMonthChart(index) {
+      if (!monthlyDetail.length) {
+        monthChartContainer.innerHTML = '<p class="muted">Aucune donnée détaillée disponible.</p>';
+        monthSelect.disabled = true;
+        return;
+      }
+
+      const monthData = monthlyDetail[index] || monthlyDetail[0];
+      if (!monthData) {
+        monthChartContainer.innerHTML = '<p class="muted">Données indisponibles pour ce mois.</p>';
+        return;
+      }
+
+      monthSelect.value = String(index);
+
+      if (monthChart) {
+        monthChart.destroy();
+      }
+
+      monthChart = new ApexCharts(monthChartContainer, {
+        series: [
+          { name: 'Production', type: 'line', data: monthData.production },
+          { name: 'Consommation', type: 'line', data: monthData.consumption },
+          { name: 'Solde net', type: 'column', data: monthData.net }
+        ],
+        chart: { type: 'line', height: 420, stacked: false, zoom: { enabled: false } },
+        stroke: { curve: 'smooth', width: [3, 3, 0] },
+        plotOptions: { bar: { columnWidth: '45%' } },
+        fill: { opacity: [0.9, 0.9, 0.3] },
+        xaxis: {
+          categories: monthData.categories,
+          tickAmount: Math.min(12, monthData.categories.length),
+          labels: { rotate: -35 }
+        },
+        yaxis: [{ title: { text: 'kWh' } }],
+        dataLabels: { enabled: false },
+        tooltip: { shared: true }
+      });
+      monthChart.render();
+    }
+
+    function populateMonthSelect() {
+      monthSelect.innerHTML = '';
+      monthlyDetail.forEach((entry, idx) => {
+        const option = document.createElement('option');
+        option.value = idx;
+        option.textContent = entry.label;
+        monthSelect.appendChild(option);
+      });
+    }
+
+    populateMonthSelect();
+    if (monthlyDetail.length) {
+      renderMonthChart(0);
+      monthSelect.addEventListener('change', (event) => {
+        renderMonthChart(Number(event.target.value));
+      });
+    } else {
+      renderMonthChart(0);
+    }
 
     const avgChart = new ApexCharts(document.querySelector('#avg-chart'), {
       series: [

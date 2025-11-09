@@ -20,7 +20,7 @@
       <h2>Projets existants</h2>
       <table>
         <thead>
-          <tr><th>Nom</th><th>Phase</th><th>Créé le</th></tr>
+          <tr><th>Nom</th><th>Phase</th><th>Créé le</th><th>Actions</th></tr>
         </thead>
         <tbody>
           {% for p in projects %}
@@ -28,9 +28,16 @@
               <td><a href="{% url 'project_detail' p.id %}">{{ p.name }}</a></td>
               <td>{{ p.phase }}</td>
               <td>{{ p.created_at|date:"d M Y" }}</td>
+              <td>
+                <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+                  <a href="{% url 'project_detail' p.id %}" class="btn" style="padding:.5rem .9rem; font-size:.9rem;">Ingestion</a>
+                  <a href="{% url 'project_analysis_page' p.id %}" class="btn" style="padding:.5rem .9rem; font-size:.9rem; background:#0d47a1;">Analyse</a>
+                  <a href="{% url 'project_stage3' p.id %}" class="btn" style="padding:.5rem .9rem; font-size:.9rem; background:#5f6c85;">Stage 3</a>
+                </div>
+              </td>
             </tr>
           {% empty %}
-            <tr><td colspan="3" class="muted">Aucun projet pour l’instant.</td></tr>
+            <tr><td colspan="4" class="muted">Aucun projet pour l’instant.</td></tr>
           {% endfor %}
         </tbody>
       </table>

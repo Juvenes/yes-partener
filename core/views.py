@@ -519,39 +519,19 @@ def project_analysis_page(request, project_id):
         'consumption': recent_daily['consumption_kwh'].round(2).tolist(),
     }
 
-    yearly_freq = 'H'
-    yearly_totals = totals_by_instant.resample(yearly_freq).sum()
-    if len(yearly_totals) > 2000:
-        for freq_candidate in ['2H', '3H', '4H', '6H', '8H', '12H', 'D']:
-            candidate = totals_by_instant.resample(freq_candidate).sum()
-            if len(candidate) <= 2000:
-                yearly_totals = candidate
-                yearly_freq = freq_candidate
-                break
-        else:
-            yearly_totals = totals_by_instant.resample('7D').sum()
-            yearly_freq = '7D'
-
-    date_format = '%Y-%m-%d %H:%M' if 'H' in yearly_freq else '%Y-%m-%d'
-    yearly_categories = [dt.strftime(date_format) for dt in yearly_totals.index]
-    yearly_series = {
-        'production': yearly_totals['production_kwh'].round(2).tolist(),
-        'consumption': yearly_totals['consumption_kwh'].round(2).tolist(),
-        'net': (yearly_totals['production_kwh'] - yearly_totals['consumption_kwh']).round(2).tolist(),
-    }
-
-    freq_labels = {
-        'H': '1 h',
-        '2H': '2 h',
-        '3H': '3 h',
-        '4H': '4 h',
-        '6H': '6 h',
-        '8H': '8 h',
-        '12H': '12 h',
-        'D': '1 jour',
-        '7D': '7 jours',
-    }
-    yearly_resolution = freq_labels.get(yearly_freq, yearly_freq)
+    monthly_daily_detail = []
+    if not daily_totals.empty:
+        grouped = daily_totals.groupby(daily_totals.index.to_period('M'))
+        for period, month_df in grouped:
+            monthly_daily_detail.append(
+                {
+                    'label': period.strftime('%Y-%m'),
+                    'categories': [dt.strftime('%Y-%m-%d') for dt in month_df.index],
+                    'production': month_df['production_kwh'].round(2).tolist(),
+                    'consumption': month_df['consumption_kwh'].round(2).tolist(),
+                    'net': (month_df['production_kwh'] - month_df['consumption_kwh']).round(2).tolist(),
+                }
+            )
 
     avg_profile = totals_by_instant.groupby(totals_by_instant.index.time).mean()
     avg_profile_index = [time.strftime('%H:%M') for time in avg_profile.index]
@@ -604,9 +584,7 @@ def project_analysis_page(request, project_id):
         'monthly_series': json.dumps(monthly_series),
         'daily_categories': json.dumps(daily_categories),
         'daily_series': json.dumps(daily_series),
-        'yearly_categories': json.dumps(yearly_categories),
-        'yearly_series': json.dumps(yearly_series),
-        'yearly_resolution': yearly_resolution,
+        'monthly_detail': json.dumps(monthly_daily_detail),
         'avg_profile_categories': json.dumps(avg_profile_index),
         'avg_profile_series': json.dumps(avg_profile_series),
         'aggregate_metadata': aggregate_metadata,
