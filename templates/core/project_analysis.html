@@ -205,7 +205,7 @@
         tickAmount: 12,
         labels: {
           rotate: -45,
-          formatter: (value) => value.slice(0, 16)
+          formatter: (value) => (typeof value === 'string' ? value.slice(0, 16) : '')
         }
       },
       yaxis: [{ title: { text: 'kWh' } }],

@@ -357,11 +357,27 @@ def project_analysis_page(request, project_id):
         combined_frames.append(df)
 
         metadata_dict = asdict(parse_result.metadata)
+        total_production = float(df['production_kwh'].sum())
+        total_consumption = float(df['consumption_kwh'].sum())
+
+        totals_section = metadata_dict.setdefault('totals', {})
+        totals_section['production_kwh'] = total_production
+        totals_section['consumption_kwh'] = total_consumption
+
+        if not metadata_dict.get('start') and not df['timestamp'].empty:
+            metadata_dict['start'] = df['timestamp'].min().isoformat()
+        if not metadata_dict.get('end') and not df['timestamp'].empty:
+            metadata_dict['end'] = df['timestamp'].max().isoformat()
+        if not metadata_dict.get('normalized_year') and not df['timestamp'].empty:
+            year_mode = df['timestamp'].dt.year.mode()
+            if not year_mode.empty:
+                metadata_dict['normalized_year'] = int(year_mode.iloc[0])
+
         member_stats.append({
             'member': member,
             'metadata': metadata_dict,
-            'total_production': metadata_dict.get('totals', {}).get('production_kwh', 0.0),
-            'total_consumption': metadata_dict.get('totals', {}).get('consumption_kwh', 0.0),
+            'total_production': total_production,
+            'total_consumption': total_consumption,
         })
 
     if not combined_frames:
@@ -434,6 +450,15 @@ def project_analysis_page(request, project_id):
             file_type='project_aggregate',
         )
     )
+
+    normalized_years = [
+        item['metadata'].get('normalized_year')
+        for item in member_stats
+        if item.get('metadata') and item['metadata'].get('normalized_year') is not None
+    ]
+    if normalized_years:
+        # Prefer the most common year among members for the aggregate summary.
+        aggregate_metadata['normalized_year'] = max(set(normalized_years), key=normalized_years.count)
 
     top_producers = sorted(member_stats, key=lambda x: x['total_production'], reverse=True)[:5]
     top_consumers = sorted(member_stats, key=lambda x: x['total_consumption'], reverse=True)[:5]

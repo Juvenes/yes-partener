@@ -216,10 +216,28 @@ def _prefer_profile_column(columns: List[str]) -> str:
 
 
 def _to_float_series(series: pd.Series) -> pd.Series:
-    result = pd.to_numeric(series, errors="coerce")
-    if result.isna().all():
-        # Attempt to parse using French decimal comma
-        result = pd.to_numeric(series.astype(str).str.replace(",", "."), errors="coerce")
+    """Return a float series tolerant to common European number formats."""
+
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_numeric(series, errors="coerce").fillna(0.0)
+
+    text = (
+        series.astype(str)
+        .str.strip()
+        .str.replace("\u00a0", "", regex=False)  # non-breaking space
+        .str.replace(r"\s+", "", regex=True)
+    )
+
+    # When both comma and dot are present we assume the dot is a thousands separator.
+    both_sep_mask = text.str.contains(",") & text.str.contains(".", regex=False)
+    text = text.where(~both_sep_mask, text.str.replace(".", "", regex=False))
+
+    # Apostrophes are also used as thousands separators in some exports.
+    text = text.str.replace("'", "", regex=False)
+
+    normalized = text.str.replace(",", ".", regex=False)
+
+    result = pd.to_numeric(normalized, errors="coerce")
     return result.fillna(0.0)
 
 
