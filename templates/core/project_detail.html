@@ -11,6 +11,7 @@
     .input, select { padding: .75rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; box-sizing: border-box; font-size: 1rem; margin-bottom: 0.5rem; }
     select[multiple] { height: 120px; }
     .btn { padding: .75rem 1.25rem; border-radius: 8px; border: none; background: #222; color: #fff; cursor: pointer; font-size: 1rem; }
+    .btn-group { display: flex; gap: .75rem; flex-wrap: wrap; }
     table { width:100%; border-collapse: collapse; font-size: 1.05rem; }
     th, td { border-bottom: 1px solid #eee; padding: 1rem .5rem; text-align: left; vertical-align: top; }
     th { font-weight: 600; color: #555; }
@@ -26,9 +27,12 @@
 </head>
 <body>
   <p><a href="{% url 'project_list' %}">&larr; Retour aux projets</a></p>
-  <div style="display: flex; justify-content: space-between; align-items: center;">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
       <h1>{{ project.name }} — Phase 1 : Ingestion</h1>
-      <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="text-decoration: none;">Analyser le projet &rarr;</a>
+      <div class="btn-group">
+          <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="text-decoration: none;">Analyser le projet &rarr;</a>
+          <a href="{% url 'project_stage3' project.id %}" class="btn" style="text-decoration: none; background: #0d47a1;">Stage 3 – Communauté &rarr;</a>
+      </div>
   </div>
 
   {% if messages %}
@@ -77,7 +81,21 @@
           <input class="input" step="0.01" min="0" type="number" name="annual_production_kwh" placeholder="Ex: 12000">
         </div>
 
-        <button class="btn" type="submit" style="margin-top:1rem; width: 100%;">Créer le membre</button>
+        <h3 style="margin-top:1.5rem;">Données économiques (Stage 3)</h3>
+
+        <label>Prix actuel de l'énergie (€/kWh)</label>
+        <input class="input" type="number" step="0.001" min="0" name="current_unit_price_eur_per_kwh" value="0.25">
+
+        <label>Frais fixes annuels actuels (€)</label>
+        <input class="input" type="number" step="0.01" min="0" name="current_fixed_fee_eur" value="0.00">
+
+        <label>Énergie injectée annuellement (kWh)</label>
+        <input class="input" type="number" step="0.01" min="0" name="injection_annual_kwh" value="0.00">
+
+        <label>Tarif d'injection (€/kWh)</label>
+        <input class="input" type="number" step="0.001" min="0" name="injection_unit_price_eur_per_kwh" value="0.05">
+
+        <button class="btn" type="submit" style="margin-top:1.5rem; width: 100%;">Créer le membre</button>
       </form>
     </div>
 

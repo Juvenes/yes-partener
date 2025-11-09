@@ -1,5 +1,13 @@
 from django.contrib import admin
-from .models import Project, Member, Profile, MemberProfile, GlobalParameter
+from .models import (
+    Project,
+    Member,
+    Profile,
+    MemberProfile,
+    GlobalParameter,
+    StageThreeScenario,
+    StageThreeScenarioMember,
+)
 
 class MemberProfileInline(admin.TabularInline):
     model = MemberProfile
@@ -26,3 +34,22 @@ class ProfileAdmin(admin.ModelAdmin):
 class GlobalParameterAdmin(admin.ModelAdmin):
     list_display = ("key", "updated_at")
     search_fields = ("key",)
+
+
+class StageThreeScenarioMemberInline(admin.TabularInline):
+    model = StageThreeScenarioMember
+    extra = 0
+
+
+@admin.register(StageThreeScenario)
+class StageThreeScenarioAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "project",
+        "community_price_eur_per_kwh",
+        "price_min_eur_per_kwh",
+        "price_max_eur_per_kwh",
+    )
+    list_filter = ("project", "fee_allocation")
+    search_fields = ("name", "project__name")
+    inlines = [StageThreeScenarioMemberInline]

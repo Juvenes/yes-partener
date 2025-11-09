@@ -11,6 +11,32 @@ urlpatterns = [
     path("projects/<int:project_id>/", v.project_detail, name="project_detail"),
     path("projects/<int:project_id>/members/create/", v.member_create, name="member_create"),
     path("projects/<int:project_id>/analysis/", v.project_analysis_page, name="project_analysis_page"),
+    path("projects/<int:project_id>/stage3/", v.project_stage3, name="project_stage3"),
+    path(
+        "projects/<int:project_id>/stage3/members/<int:member_id>/",
+        v.stage3_member_update,
+        name="stage3_member_update",
+    ),
+    path(
+        "projects/<int:project_id>/stage3/scenarios/create/",
+        v.stage3_scenario_create,
+        name="stage3_scenario_create",
+    ),
+    path(
+        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/update/",
+        v.stage3_scenario_update,
+        name="stage3_scenario_update",
+    ),
+    path(
+        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/delete/",
+        v.stage3_scenario_delete,
+        name="stage3_scenario_delete",
+    ),
+    path(
+        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/members/<int:member_id>/",
+        v.stage3_scenario_member_update,
+        name="stage3_scenario_member_update",
+    ),
 
     # New dedicated pages
     path("profiles/", v.profile_list, name="profiles"),

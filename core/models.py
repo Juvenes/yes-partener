@@ -62,6 +62,28 @@ class Member(models.Model):
     # Mode: profile_based
     annual_consumption_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
     annual_production_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
+
+    # Stage 3 cost inputs
+    current_unit_price_eur_per_kwh = models.FloatField(
+        default=0.25,
+        validators=[MinValueValidator(0.0)],
+        help_text="Prix unitaire actuel payé au fournisseur (€/kWh).",
+    )
+    current_fixed_fee_eur = models.FloatField(
+        default=0.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Partie fixe annuelle de la facture actuelle (€/an).",
+    )
+    injection_annual_kwh = models.FloatField(
+        default=0.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Energie annuelle injectée sur le réseau (kWh).",
+    )
+    injection_unit_price_eur_per_kwh = models.FloatField(
+        default=0.05,
+        validators=[MinValueValidator(0.0)],
+        help_text="Tarif de rachat pour l'injection (€/kWh).",
+    )
     
     class Meta:
         unique_together = ("project", "name")
@@ -90,3 +112,114 @@ class GlobalParameter(models.Model):
 
     def __str__(self):
         return self.key
+
+
+class StageThreeScenario(models.Model):
+    FEE_ALLOCATION_CHOICES = [
+        ("all_members", "Répartition égale (tous les membres)"),
+        ("participants", "Répartition égale (participants)"),
+        ("consumption", "Proportionnelle à l'énergie communautaire"),
+    ]
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="stage3_scenarios",
+    )
+    name = models.CharField(max_length=200)
+    community_price_eur_per_kwh = models.FloatField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0.0)],
+        help_text="Prix cible de l'énergie communautaire (€/kWh).",
+    )
+    price_min_eur_per_kwh = models.FloatField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0.0)],
+        help_text="Borne minimum pour optimiser le prix communautaire (€/kWh).",
+    )
+    price_max_eur_per_kwh = models.FloatField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0.0)],
+        help_text="Borne maximum pour optimiser le prix communautaire (€/kWh).",
+    )
+    price_step_eur_per_kwh = models.FloatField(
+        default=0.005,
+        validators=[MinValueValidator(0.0001)],
+        help_text="Pas utilisé lors de l'exploration du prix communautaire.",
+    )
+    default_share = models.FloatField(
+        default=1.0,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Part de consommation couverte par défaut par l'énergie communautaire (0-1).",
+    )
+    coverage_cap = models.FloatField(
+        default=1.0,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Part maximale pouvant être couverte (0-1).",
+    )
+    community_fixed_fee_total_eur = models.FloatField(
+        default=0.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Coût fixe annuel de la communauté à répartir (€/an).",
+    )
+    community_per_member_fee_eur = models.FloatField(
+        default=0.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Frais annuels individuels (€/an) pour les membres participants.",
+    )
+    fee_allocation = models.CharField(
+        max_length=20,
+        choices=FEE_ALLOCATION_CHOICES,
+        default="participants",
+    )
+    notes = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("project", "name")
+        ordering = ["project", "name"]
+
+    def __str__(self):
+        return f"{self.project.name} – {self.name}"
+
+
+class StageThreeScenarioMember(models.Model):
+    scenario = models.ForeignKey(
+        StageThreeScenario,
+        on_delete=models.CASCADE,
+        related_name="member_settings",
+    )
+    member = models.ForeignKey(
+        Member,
+        on_delete=models.CASCADE,
+        related_name="stage3_settings",
+    )
+    share_override = models.FloatField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Valeur utilisée par défaut pour ce membre (0-1).",
+    )
+    min_share = models.FloatField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Bornes minimales pour les optimisations (0-1).",
+    )
+    max_share = models.FloatField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Bornes maximales pour les optimisations (0-1).",
+    )
+
+    class Meta:
+        unique_together = ("scenario", "member")
+        ordering = ["scenario", "member__name"]
+
+    def __str__(self):
+        return f"{self.scenario.name} → {self.member.name}"

@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ project.name }} — Stage 3 : Communauté énergétique</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      color-scheme: light;
+    }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f4f5fb; margin: 2rem; }
+    a { color: #0d47a1; }
+    h1 { margin-bottom: 0.5rem; }
+    h2 { margin-top: 2.5rem; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: .65rem 1.1rem; border-radius: 8px; border: none; background: #0d47a1; color: #fff; cursor: pointer; text-decoration: none; font-weight: 600; }
+    .btn-secondary { background: #263238; }
+    .btn-danger { background: #b71c1c; }
+    .btn-small { display: inline-flex; align-items: center; padding: .5rem .9rem; border-radius: 6px; border: none; background: #263238; color: #fff; cursor: pointer; font-size: .9rem; }
+    .header { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    .breadcrumbs { font-size: .95rem; margin-bottom: .75rem; }
+    .messages { list-style: none; margin: 1.5rem 0; padding: 0; }
+    .messages li { padding: 1rem; border-radius: 10px; margin-bottom: .75rem; }
+    .messages li.success { background: #e8f5e9; color: #1b5e20; }
+    .messages li.error { background: #ffebee; color: #c62828; }
+    .messages li.warning { background: #fff8e1; color: #ff8f00; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+    .card { background: #fff; border-radius: 14px; padding: 1.5rem; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08); }
+    .card h3 { margin-top: 0; }
+    .kpi { font-size: 2rem; font-weight: 700; margin: .25rem 0; }
+    .muted { color: #5f6368; font-size: .95rem; }
+    .member-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin-top: 1.5rem; }
+    .member-card h3 { margin-top: 0; margin-bottom: .25rem; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+    .form-grid label { display: flex; flex-direction: column; font-size: .9rem; color: #3949ab; }
+    .form-grid input, .form-grid select { margin-top: .35rem; padding: .55rem .65rem; border-radius: 6px; border: 1px solid #cfd8dc; font-size: .95rem; }
+    .scenario-form { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .scenario-card { margin-top: 2rem; display: grid; gap: 1.5rem; }
+    .scenario-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; align-items: center; }
+    .scenario-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+    details { background: #f6f8ff; border-radius: 10px; padding: 1rem 1.25rem; }
+    details summary { cursor: pointer; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border-bottom: 1px solid #eceff1; padding: .75rem .5rem; text-align: left; font-size: .95rem; }
+    th { font-weight: 600; color: #37474f; }
+    tbody tr:hover { background: #f8f9ff; }
+    .pill { display: inline-flex; align-items: center; padding: .25rem .6rem; border-radius: 999px; font-size: .8rem; background: #e3f2fd; color: #0d47a1; margin-right: .4rem; }
+    .scenario-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .scenario-summary div { background: #f4f7ff; border-radius: 10px; padding: 1rem; }
+    .optimization-list { display: grid; gap: 1rem; }
+    .constraint-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; align-items: end; }
+    .constraint-form label { display: flex; flex-direction: column; font-size: .85rem; color: #1a237e; }
+    .constraint-form input { margin-top: .3rem; padding: .5rem .6rem; border-radius: 6px; border: 1px solid #cfd8dc; }
+    .constraint-list { display: grid; gap: 1rem; }
+    .constraint-row { display: grid; grid-template-columns: minmax(0, 220px) 1fr; gap: 1.25rem; align-items: start; background: #f5f8ff; padding: 1rem 1.25rem; border-radius: 12px; }
+    .error { color: #c62828; }
+    @media (max-width: 720px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .constraint-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="breadcrumbs">
+    <a href="{% url 'project_list' %}">Projets</a> · <a href="{% url 'project_detail' project.id %}">{{ project.name }}</a> · Stage 3
+  </div>
+  <div class="header">
+    <div>
+      <h1>{{ project.name }} — Stage 3 : Communauté énergétique</h1>
+      <p class="muted">Comparer les factures actuelles des membres et simuler des scénarios communautaires.</p>
+    </div>
+    <div class="scenario-actions">
+      <a href="{% url 'project_detail' project.id %}" class="btn-secondary btn">Retour phase 1</a>
+      <a href="{% url 'project_analysis_page' project.id %}" class="btn">Analyse des données</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    <ul class="messages">
+      {% for message in messages %}
+        <li class="{{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <section class="summary-grid">
+    <div class="card">
+      <h3>Consommation cumulée</h3>
+      <div class="kpi">{{ total_consumption|floatformat:0 }} kWh</div>
+      <p class="muted">Somme des consommations annuelles connues.</p>
+    </div>
+    <div class="card">
+      <h3>Coût actuel cumulé</h3>
+      <div class="kpi">{{ total_current_cost|floatformat:2 }} €</div>
+      <p class="muted">Avant scénario communautaire (frais fixes inclus).</p>
+    </div>
+    <div class="card">
+      <h3>Coût moyen actuel</h3>
+      <div class="kpi">{{ avg_current_cost|floatformat:4 }} €/kWh</div>
+      <p class="muted">Coût pondéré par la consommation.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Données économiques des membres</h2>
+    <div class="member-grid">
+      {% for member_card in member_cards %}
+        <div class="card member-card">
+          <h3>{{ member_card.input.name }}</h3>
+          {% if member_card.input.utility %}<p class="muted">{{ member_card.input.utility }}</p>{% endif %}
+          <p class="muted">Consommation annuelle : <strong>{{ member_card.input.consumption_kwh|floatformat:0 }}</strong> kWh</p>
+          <p class="muted">Coût actuel : <strong>{{ member_card.current_cost|floatformat:2 }}</strong> € — {{ member_card.cost_per_kwh|floatformat:4 }} €/kWh</p>
+          {% if member_card.form %}
+            <form method="post" action="{% url 'stage3_member_update' project.id member_card.input.member_id %}">
+              {% csrf_token %}
+              <div class="form-grid">
+                {% for field in member_card.form %}
+                  <label>
+                    {{ field.label }}
+                    {{ field }}
+                    {% if field.errors %}<span class="error">{{ field.errors|striptags }}</span>{% endif %}
+                  </label>
+                {% endfor %}
+              </div>
+              <button class="btn-small" type="submit" style="margin-top: .75rem;">Enregistrer</button>
+            </form>
+          {% else %}
+            <p class="error">Formulaire indisponible pour ce membre.</p>
+          {% endif %}
+        </div>
+      {% empty %}
+        <p class="muted">Aucun membre n'est disponible pour le moment.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Créer un scénario communautaire</h2>
+    <form method="post" action="{% url 'stage3_scenario_create' project.id %}" class="card">
+      {% csrf_token %}
+      <div class="form-grid scenario-form">
+        {% for field in scenario_form %}
+          <label>
+            {{ field.label }}
+            {{ field }}
+            {% if field.help_text %}<span class="muted">{{ field.help_text }}</span>{% endif %}
+            {% if field.errors %}<span class="error">{{ field.errors|striptags }}</span>{% endif %}
+          </label>
+        {% endfor %}
+      </div>
+      <button class="btn" type="submit" style="margin-top: 1rem;">Créer le scénario</button>
+    </form>
+  </section>
+
+  {% for card in scenario_cards %}
+    <section class="scenario-card card">
+      <div class="scenario-header">
+        <div>
+          <h2>{{ card.scenario.name }}</h2>
+          <div class="muted" style="margin-top: .35rem;">
+            {% if card.params.community_price_eur_per_kwh is not None %}
+              <span class="pill">Prix {{ card.params.community_price_eur_per_kwh|floatformat:3 }} €/kWh</span>
+            {% else %}
+              <span class="pill">Prix exploré {{ card.params.price_min_eur_per_kwh|floatformat:3 }} → {{ card.params.price_max_eur_per_kwh|floatformat:3 }} €/kWh</span>
+            {% endif %}
+            <span class="pill">Couverture max {{ card.params.coverage_cap|floatformat:2 }}</span>
+            {% if card.scenario.community_fixed_fee_total_eur %}
+              <span class="pill">Frais partagés {{ card.scenario.community_fixed_fee_total_eur|floatformat:2 }} €</span>
+            {% endif %}
+            {% if card.scenario.community_per_member_fee_eur %}
+              <span class="pill">Frais individuels {{ card.scenario.community_per_member_fee_eur|floatformat:2 }} €</span>
+            {% endif %}
+            <span class="pill">Répartition {{ card.scenario.get_fee_allocation_display }}</span>
+          </div>
+        </div>
+        <div class="scenario-actions">
+          <form method="post" action="{% url 'stage3_scenario_delete' project.id card.scenario.id %}" onsubmit="return confirm('Supprimer ce scénario ?');">
+            {% csrf_token %}
+            <button class="btn-danger btn-small" type="submit">Supprimer</button>
+          </form>
+        </div>
+      </div>
+
+      <details>
+        <summary>Modifier les paramètres du scénario</summary>
+        <form method="post" action="{% url 'stage3_scenario_update' project.id card.scenario.id %}">
+          {% csrf_token %}
+          <div class="form-grid scenario-form" style="margin-top: 1rem;">
+            {% for field in card.form %}
+              <label>
+                {{ field.label }}
+                {{ field }}
+                {% if field.help_text %}<span class="muted">{{ field.help_text }}</span>{% endif %}
+                {% if field.errors %}<span class="error">{{ field.errors|striptags }}</span>{% endif %}
+              </label>
+            {% endfor %}
+          </div>
+          <button class="btn-small" type="submit" style="margin-top: .75rem;">Sauvegarder</button>
+        </form>
+      </details>
+
+      <div>
+        <h3>Contraintes par membre</h3>
+        <div class="constraint-list">
+          {% for member, form in card.member_forms %}
+            <div class="constraint-row">
+              <div>
+                <strong>{{ member.name }}</strong>
+                <p class="muted">Utilité : {{ member.utility|default:"—" }}</p>
+              </div>
+              <form method="post" action="{% url 'stage3_scenario_member_update' project.id card.scenario.id member.id %}" class="constraint-form">
+                {% csrf_token %}
+                <div class="constraint-grid">
+                  {% for field in form %}
+                    <label>
+                      {{ field.label }}
+                      {{ field }}
+                      {% if field.errors %}<span class="error">{{ field.errors|striptags }}</span>{% endif %}
+                    </label>
+                  {% endfor %}
+                  <button class="btn-small" type="submit">Enregistrer</button>
+                </div>
+              </form>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div>
+        <h3>Résultat de base</h3>
+        {% if card.evaluation %}
+          <p class="muted">Prix utilisé : {{ card.evaluation.price_eur_per_kwh|floatformat:3 }} €/kWh.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Membre</th>
+                <th>Part communautaire</th>
+                <th>kWh communauté</th>
+                <th>kWh fournisseur</th>
+                <th>Coût actuel</th>
+                <th>Coût scénario</th>
+                <th>Écart</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for breakdown in card.evaluation.member_breakdowns %}
+                <tr>
+                  <td>{{ breakdown.name }}</td>
+                  <td>{{ breakdown.share|floatformat:2 }}</td>
+                  <td>{{ breakdown.community_kwh|floatformat:0 }}</td>
+                  <td>{{ breakdown.supplier_kwh|floatformat:0 }}</td>
+                  <td>{{ breakdown.current_cost|floatformat:2 }} €</td>
+                  <td>{{ breakdown.community_cost|floatformat:2 }} €</td>
+                  <td>{% if breakdown.delta_cost <= 0 %}<span style="color:#2e7d32;">{{ breakdown.delta_cost|floatformat:2 }} €</span>{% else %}<span class="error">+{{ breakdown.delta_cost|floatformat:2 }} €</span>{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Total</th>
+                <th></th>
+                <th>{{ card.evaluation.total_community_consumption_kwh|floatformat:0 }}</th>
+                <th>{{ card.evaluation.total_supplier_consumption_kwh|floatformat:0 }}</th>
+                <th>{{ card.evaluation.total_current_cost|floatformat:2 }} €</th>
+                <th>{{ card.evaluation.total_community_cost|floatformat:2 }} €</th>
+                <th>{{ card.evaluation.savings|floatformat:2 }} €</th>
+              </tr>
+            </tfoot>
+          </table>
+        {% else %}
+          <p class="error">{{ card.evaluation_error }}</p>
+        {% endif %}
+      </div>
+
+      <div>
+        <h3>Optimisations</h3>
+        <div class="optimization-list">
+          {% if card.optimizations.total_cost %}
+            {% with opt=card.optimizations.total_cost %}
+              <details open>
+                <summary>Minimiser le coût total (prix {{ opt.evaluation.price_eur_per_kwh|floatformat:3 }} €/kWh)</summary>
+                <p class="muted">Coût global : {{ opt.evaluation.total_community_cost|floatformat:2 }} € (gain {{ opt.evaluation.savings|floatformat:2 }} € par rapport à l'actuel).</p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Membre</th>
+                      <th>Part communautaire</th>
+                      <th>kWh communauté</th>
+                      <th>Coût scénario</th>
+                      <th>Écart</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for breakdown in opt.evaluation.member_breakdowns %}
+                      <tr>
+                        <td>{{ breakdown.name }}</td>
+                        <td>{{ breakdown.share|floatformat:2 }}</td>
+                        <td>{{ breakdown.community_kwh|floatformat:0 }}</td>
+                        <td>{{ breakdown.community_cost|floatformat:2 }} €</td>
+                        <td>{% if breakdown.delta_cost <= 0 %}<span style="color:#2e7d32;">{{ breakdown.delta_cost|floatformat:2 }} €</span>{% else %}<span class="error">+{{ breakdown.delta_cost|floatformat:2 }} €</span>{% endif %}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </details>
+            {% endwith %}
+          {% else %}
+            <p class="muted">Optimisation du coût total indisponible (prix manquant).</p>
+          {% endif %}
+
+          {% if card.optimizations.average_cost %}
+            {% with opt=card.optimizations.average_cost %}
+              <details>
+                <summary>Minimiser le coût moyen (prix {{ opt.evaluation.price_eur_per_kwh|floatformat:3 }} €/kWh)</summary>
+                <p class="muted">Coût moyen : {{ opt.evaluation.average_cost_per_kwh|floatformat:4 }} €/kWh.</p>
+              </details>
+            {% endwith %}
+          {% endif %}
+
+          <details>
+            <summary>Optimisation individuelle</summary>
+            <table>
+              <thead>
+                <tr>
+                  <th>Membre</th>
+                  <th>Part recommandée</th>
+                  <th>Coût scénario</th>
+                  <th>Économie</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in card.optimizations.member_opts %}
+                  {% if item.result and item.breakdown %}
+                    <tr>
+                      <td>{{ item.member.name }}</td>
+                      <td>{{ item.breakdown.share|floatformat:2 }}</td>
+                      <td>{{ item.breakdown.community_cost|floatformat:2 }} €</td>
+                      <td>{% with delta=item.breakdown.delta_cost %}{% if delta <= 0 %}<span style="color:#2e7d32;">{{ delta|floatformat:2 }} €</span>{% else %}<span class="error">+{{ delta|floatformat:2 }} €</span>{% endif %}{% endwith %}</td>
+                    </tr>
+                  {% else %}
+                    <tr>
+                      <td>{{ item.member.name }}</td>
+                      <td colspan="3" class="muted">Pas de configuration optimale (prix manquant).</td>
+                    </tr>
+                  {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </details>
+        </div>
+      </div>
+    </section>
+  {% empty %}
+    <p class="muted">Créez un premier scénario pour explorer les optimisations communautaires.</p>
+  {% endfor %}
+
+</body>
+</html>

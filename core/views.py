@@ -2,8 +2,35 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_http_methods
 from django.http import HttpResponseBadRequest, HttpResponse
 from dataclasses import asdict
-from .models import Project, Member, MemberProfile, Profile, GlobalParameter
-from .forms import ProjectForm, MemberForm, MemberProfileForm, ProfileForm, GlobalParameterForm
+from typing import Dict
+from .models import (
+    Project,
+    Member,
+    MemberProfile,
+    Profile,
+    GlobalParameter,
+    StageThreeScenario,
+    StageThreeScenarioMember,
+)
+from .forms import (
+    ProjectForm,
+    MemberForm,
+    MemberProfileForm,
+    ProfileForm,
+    GlobalParameterForm,
+    StageThreeMemberCostForm,
+    StageThreeScenarioForm,
+    StageThreeScenarioMemberForm,
+)
+from .stage3 import (
+    ShareConstraint,
+    build_member_inputs,
+    build_scenario_parameters,
+    evaluate_scenario,
+    optimize_average_cost,
+    optimize_member_cost,
+    optimize_total_cost,
+)
 from .timeseries import (
     TimeseriesError,
     build_metadata,
@@ -19,6 +46,13 @@ import io
 from django.db import IntegrityError # Import IntegrityError
 from django.contrib import messages
 import pandas as pd
+
+
+def _parse_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 # Simplified project list view
@@ -229,6 +263,11 @@ def member_create(request, project_id):
                 )
             )
 
+            price_default = Member._meta.get_field("current_unit_price_eur_per_kwh").default
+            fixed_default = Member._meta.get_field("current_fixed_fee_eur").default
+            inj_qty_default = Member._meta.get_field("injection_annual_kwh").default
+            inj_price_default = Member._meta.get_field("injection_unit_price_eur_per_kwh").default
+
             member = Member(
                 project=project,
                 name=request.POST.get('name'),
@@ -237,6 +276,18 @@ def member_create(request, project_id):
                 annual_consumption_kwh=(annual_cons_value if annual_consumption else None),
                 annual_production_kwh=(annual_prod_value if annual_production else None),
                 timeseries_metadata=metadata,
+                current_unit_price_eur_per_kwh=_parse_float(
+                    request.POST.get('current_unit_price_eur_per_kwh'), price_default
+                ),
+                current_fixed_fee_eur=_parse_float(
+                    request.POST.get('current_fixed_fee_eur'), fixed_default
+                ),
+                injection_annual_kwh=_parse_float(
+                    request.POST.get('injection_annual_kwh'), inj_qty_default
+                ),
+                injection_unit_price_eur_per_kwh=_parse_float(
+                    request.POST.get('injection_unit_price_eur_per_kwh'), inj_price_default
+                ),
             )
             member.save()
 
@@ -490,3 +541,240 @@ def project_analysis_page(request, project_id):
     }
 
     return render(request, "core/project_analysis.html", context)
+
+
+def project_stage3(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    members = list(project.members.all().order_by("name"))
+    member_inputs = build_member_inputs(members)
+    member_forms = {
+        member.id: StageThreeMemberCostForm(instance=member, prefix=f"member-{member.id}")
+        for member in members
+    }
+    member_cards = [
+        {
+            "input": member_input,
+            "form": member_forms.get(member_input.member_id),
+            "current_cost": member_input.current_cost(),
+            "cost_per_kwh": member_input.cost_per_kwh,
+        }
+        for member_input in member_inputs
+    ]
+
+    scenario_form = StageThreeScenarioForm(prefix="scenario-new")
+    scenarios = (
+        project.stage3_scenarios.all()
+        .prefetch_related("member_settings__member")
+        .order_by("name")
+    )
+
+    scenario_cards = []
+    for scenario in scenarios:
+        settings_by_member = {s.member_id: s for s in scenario.member_settings.all()}
+        constraints: Dict[int, ShareConstraint] = {}
+        for member in members:
+            setting = settings_by_member.get(member.id)
+            if setting:
+                min_share = setting.min_share if setting.min_share is not None else 0.0
+                max_share = setting.max_share if setting.max_share is not None else scenario.coverage_cap
+                max_share = max(min_share, min(max_share, scenario.coverage_cap))
+                override = setting.share_override
+                if override is not None:
+                    override = max(min_share, min(max_share, override))
+                constraints[member.id] = ShareConstraint(
+                    min_share=max(0.0, min_share),
+                    max_share=max_share,
+                    override=override,
+                )
+            else:
+                constraints[member.id] = ShareConstraint(
+                    min_share=0.0,
+                    max_share=scenario.coverage_cap,
+                    override=None,
+                )
+
+        params = build_scenario_parameters(scenario, constraints)
+        evaluation = None
+        evaluation_error = None
+        try:
+            evaluation = evaluate_scenario(member_inputs, params)
+        except ValueError as exc:
+            evaluation_error = str(exc)
+
+        optimizations = {
+            "total_cost": None,
+            "average_cost": None,
+            "member_opts": [],
+        }
+        if evaluation is not None:
+            optimizations["total_cost"] = optimize_total_cost(member_inputs, params)
+            optimizations["average_cost"] = optimize_average_cost(member_inputs, params)
+            member_results = []
+            for member in members:
+                opt_result = optimize_member_cost(member_inputs, params, member.id)
+                breakdown = None
+                if opt_result is not None:
+                    breakdown = next(
+                        (
+                            b
+                            for b in opt_result.evaluation.member_breakdowns
+                            if b.member_id == member.id
+                        ),
+                        None,
+                    )
+                member_results.append(
+                    {
+                        "member": member,
+                        "result": opt_result,
+                        "breakdown": breakdown,
+                    }
+                )
+            optimizations["member_opts"] = member_results
+
+        member_setting_forms = []
+        for member in members:
+            instance = settings_by_member.get(member.id)
+            if not instance:
+                instance = StageThreeScenarioMember(scenario=scenario, member=member)
+            member_setting_forms.append(
+                (
+                    member,
+                    StageThreeScenarioMemberForm(
+                        instance=instance,
+                        prefix=f"scenario-{scenario.id}-member-{member.id}",
+                    ),
+                )
+            )
+
+        scenario_cards.append(
+            {
+                "scenario": scenario,
+                "form": StageThreeScenarioForm(
+                    instance=scenario, prefix=f"scenario-{scenario.id}"
+                ),
+                "member_forms": member_setting_forms,
+                "evaluation": evaluation,
+                "evaluation_error": evaluation_error,
+                "optimizations": optimizations,
+                "params": params,
+            }
+        )
+
+    total_current_cost = sum(inp.current_cost() for inp in member_inputs)
+    total_consumption = sum(inp.consumption_kwh for inp in member_inputs)
+    avg_current_cost = total_current_cost / total_consumption if total_consumption > 0 else 0.0
+
+    return render(
+        request,
+        "core/project_stage3.html",
+        {
+            "project": project,
+            "members": members,
+            "member_inputs": member_inputs,
+            "member_forms": member_forms,
+            "member_cards": member_cards,
+            "scenario_form": scenario_form,
+            "scenario_cards": scenario_cards,
+            "total_current_cost": total_current_cost,
+            "total_consumption": total_consumption,
+            "avg_current_cost": avg_current_cost,
+        },
+    )
+
+
+@require_http_methods(["POST"])
+def stage3_member_update(request, project_id, member_id):
+    project = get_object_or_404(Project, pk=project_id)
+    member = get_object_or_404(Member, pk=member_id, project=project)
+    form = StageThreeMemberCostForm(
+        request.POST, instance=member, prefix=f"member-{member.id}"
+    )
+    if form.is_valid():
+        form.save()
+        messages.success(request, f"Données tarifaires mises à jour pour {member.name}.")
+    else:
+        messages.error(request, f"Impossible de mettre à jour {member.name} : {form.errors.as_json()}")
+    return redirect("project_stage3", project_id=project.id)
+
+
+@require_http_methods(["POST"])
+def stage3_scenario_create(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    form = StageThreeScenarioForm(request.POST, prefix="scenario-new")
+    if form.is_valid():
+        scenario = form.save(commit=False)
+        scenario.project = project
+        scenario.save()
+        messages.success(request, f"Scénario '{scenario.name}' créé.")
+    else:
+        messages.error(request, f"Création du scénario impossible : {form.errors.as_json()}")
+    return redirect("project_stage3", project_id=project.id)
+
+
+@require_http_methods(["POST"])
+def stage3_scenario_update(request, project_id, scenario_id):
+    project = get_object_or_404(Project, pk=project_id)
+    scenario = get_object_or_404(StageThreeScenario, pk=scenario_id, project=project)
+    form = StageThreeScenarioForm(
+        request.POST, instance=scenario, prefix=f"scenario-{scenario.id}"
+    )
+    if form.is_valid():
+        form.save()
+        messages.success(request, f"Scénario '{scenario.name}' mis à jour.")
+    else:
+        messages.error(request, f"Mise à jour impossible : {form.errors.as_json()}")
+    return redirect("project_stage3", project_id=project.id)
+
+
+@require_http_methods(["POST"])
+def stage3_scenario_delete(request, project_id, scenario_id):
+    project = get_object_or_404(Project, pk=project_id)
+    scenario = get_object_or_404(StageThreeScenario, pk=scenario_id, project=project)
+    scenario.delete()
+    messages.success(request, "Scénario supprimé.")
+    return redirect("project_stage3", project_id=project.id)
+
+
+@require_http_methods(["POST"])
+def stage3_scenario_member_update(request, project_id, scenario_id, member_id):
+    project = get_object_or_404(Project, pk=project_id)
+    scenario = get_object_or_404(StageThreeScenario, pk=scenario_id, project=project)
+    member = get_object_or_404(Member, pk=member_id, project=project)
+    instance, _ = StageThreeScenarioMember.objects.get_or_create(
+        scenario=scenario, member=member
+    )
+    form = StageThreeScenarioMemberForm(
+        request.POST,
+        instance=instance,
+        prefix=f"scenario-{scenario.id}-member-{member.id}",
+    )
+    if form.is_valid():
+        cleaned = form.cleaned_data
+        min_share = cleaned.get("min_share")
+        max_share = cleaned.get("max_share")
+        share_override = cleaned.get("share_override")
+
+        if max_share is not None:
+            max_share = min(max_share, scenario.coverage_cap)
+        if min_share is not None:
+            min_share = max(0.0, min_share)
+        if min_share is not None and max_share is not None and min_share > max_share:
+            min_share = max_share
+        if share_override is not None:
+            lower = min_share if min_share is not None else 0.0
+            upper = max_share if max_share is not None else scenario.coverage_cap
+            share_override = max(lower, min(upper, share_override))
+
+        if share_override is None and min_share is None and max_share is None:
+            if instance.pk:
+                instance.delete()
+                messages.success(request, f"Contraintes réinitialisées pour {member.name}.")
+        else:
+            instance.share_override = share_override
+            instance.min_share = min_share
+            instance.max_share = max_share
+            instance.save()
+            messages.success(request, f"Contraintes sauvegardées pour {member.name}.")
+    else:
+        messages.error(request, f"Impossible d'enregistrer : {form.errors.as_json()}")
+    return redirect("project_stage3", project_id=project.id)
