@@ -11,6 +11,7 @@ urlpatterns = [
     path("projects/<int:project_id>/", v.project_detail, name="project_detail"),
     path("projects/<int:project_id>/members/create/", v.member_create, name="member_create"),
     path("projects/<int:project_id>/analysis/", v.project_analysis_page, name="project_analysis_page"),
+    path("projects/<int:project_id>/stage-3/", v.stage_three, name="stage_three"),
 
     # New dedicated pages
     path("profiles/", v.profile_list, name="profiles"),

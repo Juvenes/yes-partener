@@ -13,9 +13,14 @@
         {% csrf_token %}
         <label>Nom du profil</label>
         <input class="input" type="text" name="name" required>
-        <label style="margin-top:.5rem">Fichier CSV (Production,Consommation)</label>
-        <input class="input" type="file" name="profile_csv" accept=".csv" required>
-        <p class="muted">Le CSV doit contenir 96 lignes (24h par intervalles de 15 min) avec les colonnes `Production` et `Consommation`.</p>
+        <label style="margin-top:.5rem">Fichier de profil (CSV ou Excel)</label>
+        <input class="input" type="file" name="profile_csv" accept=".csv,.xlsx,.xls" required>
+        <label style="margin-top:.5rem">Type de profil</label>
+        <select class="input" name="dataset_type">
+          <option value="consumption">Profil de consommation</option>
+          <option value="production">Profil de production</option>
+        </select>
+        <p class="muted">Le fichier doit contenir des valeurs à pas de 15 minutes (96 points moyens sur une journée). Les colonnes peuvent être nommées librement ; seules la structure et le nombre de lignes comptent.</p>
         <button class="btn" type="submit" style="margin-top:.75rem">Créer le profil</button>
       </form>
     </div>

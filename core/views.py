@@ -2,7 +2,20 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_http_methods
 from django.http import HttpResponseBadRequest, HttpResponse
 from .models import Project, Member, MemberProfile, Profile, GlobalParameter
-from .forms import ProjectForm, MemberForm, MemberProfileForm, ProfileForm, GlobalParameterForm
+from .forms import (
+    ProjectForm,
+    MemberForm,
+    MemberProfileForm,
+    ProfileForm,
+    GlobalParameterForm,
+    CommunityScenarioForm,
+)
+from .stage3 import MemberFinancials, run_stage_three, DEFAULT_TARIFFS
+from .excel_import import (
+    convert_excel_timeseries_to_csv,
+    ExcelTimeseriesFormatError,
+    DatasetType,
+)
 import csv
 from datetime import datetime, timedelta
 import json
@@ -13,6 +26,8 @@ from django.db import IntegrityError # Import IntegrityError
 from django.contrib import messages
 import pandas as pd
 from django.http import JsonResponse
+from django.utils.text import slugify
+from typing import cast
 
 
 # Simplified project list view
@@ -83,7 +98,51 @@ def member_create(request, project_id):
         if form.is_valid():
             m = form.save(commit=False)
             m.project = project
+            uploaded_file = form.cleaned_data.get("timeseries_file")
+            dataset_type_raw = (request.POST.get("dataset_type") or "consumption").lower()
+            dataset_type = dataset_type_raw if dataset_type_raw in ("consumption", "production") else "consumption"
+
+            if uploaded_file and uploaded_file.name.lower().endswith((".xlsx", ".xls")):
+                try:
+                    conversion = convert_excel_timeseries_to_csv(
+                        uploaded_file,
+                        cast(DatasetType, dataset_type),
+                    )
+                except ExcelTimeseriesFormatError as exc:
+                    messages.error(request, f"Impossible de traiter le fichier Excel : {exc}")
+                    return redirect("project_detail", project_id=project.id)
+
+                csv_content = ContentFile(conversion.csv_content.encode("utf-8"))
+                safe_name = slugify(m.name) or "member"
+                filename = f"{safe_name}_timeseries.csv"
+                m.annual_consumption_kwh = conversion.annual_consumption_kwh or m.annual_consumption_kwh
+                m.annual_production_kwh = conversion.annual_production_kwh or m.annual_production_kwh
+                if conversion.annual_production_kwh:
+                    m.injected_energy_kwh = conversion.annual_production_kwh
+                m.timeseries_file.save(filename, csv_content, save=False)
+            elif uploaded_file and uploaded_file.name.lower().endswith(".csv"):
+                # For CSV uploads we keep the provided file and compute totals when possible.
+                try:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file)
+                    if "Consommation" in df.columns:
+                        m.annual_consumption_kwh = float(pd.to_numeric(df["Consommation"], errors="coerce").fillna(0).sum())
+                    if "Production" in df.columns:
+                        production_total = float(pd.to_numeric(df["Production"], errors="coerce").fillna(0).sum())
+                        m.annual_production_kwh = production_total
+                        m.injected_energy_kwh = production_total
+                except Exception:
+                    messages.warning(request, "Le fichier CSV a été importé, mais le total annuel n'a pas pu être calculé.")
+                finally:
+                    uploaded_file.seek(0)
+                m.timeseries_file = uploaded_file
+            else:
+                if uploaded_file:
+                    messages.error(request, "Format de fichier non supporté. Veuillez fournir un CSV ou un Excel.")
+                    return redirect("project_detail", project_id=project.id)
+
             m.save()
+            messages.success(request, f"Le membre '{m.name}' a été créé.")
             return redirect("project_detail", project_id=project.id)
         return HttpResponseBadRequest(f"Formulaire invalide : {form.errors.as_json()}")
 
@@ -135,7 +194,11 @@ def member_create(request, project_id):
                 utility=request.POST.get('utility', ''),
                 data_mode='timeseries_csv',
                 annual_consumption_kwh=(float(annual_consumption) if annual_consumption else None),
-                annual_production_kwh=(float(annual_production) if annual_production else None)
+                annual_production_kwh=(float(annual_production) if annual_production else None),
+                current_unit_price_eur_per_kwh=float(request.POST.get('current_unit_price_eur_per_kwh') or 0.0),
+                current_fixed_annual_fee_eur=float(request.POST.get('current_fixed_annual_fee_eur') or 0.0),
+                injected_energy_kwh=float(request.POST.get('injected_energy_kwh') or 0.0),
+                injection_price_eur_per_kwh=float(request.POST.get('injection_price_eur_per_kwh') or 0.0),
             )
             member.save()
             csv_file = ContentFile(output.getvalue().encode('utf-8'))
@@ -156,14 +219,68 @@ def member_create(request, project_id):
 def profile_create(request):
     form = ProfileForm(request.POST, request.FILES)
     if form.is_valid():
-        profile_csv = request.FILES["profile_csv"]
-        decoded_file = profile_csv.read().decode('utf-8').splitlines()
-        reader = csv.DictReader(decoded_file)
+        uploaded_file = form.cleaned_data["profile_csv"]
+        dataset_type_raw = (form.cleaned_data.get("dataset_type") or "consumption").lower()
+        dataset_type = cast(DatasetType, dataset_type_raw if dataset_type_raw in ("consumption", "production") else "consumption")
+
+        def _parse_float(value):
+            if value is None:
+                return None
+            text = str(value).strip()
+            if not text:
+                return None
+            text = text.replace(",", ".")
+            try:
+                return float(text)
+            except ValueError:
+                return None
+
+        def _fallback_numeric(row_values):
+            numeric_candidates = []
+            for idx, value in enumerate(row_values):
+                parsed = _parse_float(value)
+                if parsed is not None:
+                    numeric_candidates.append((idx, parsed))
+            for idx, parsed in numeric_candidates:
+                if idx > 0:
+                    return parsed
+            return numeric_candidates[0][1] if numeric_candidates else 0.0
+
+        reader = None
+        if uploaded_file.name.lower().endswith((".xlsx", ".xls")):
+            try:
+                conversion = convert_excel_timeseries_to_csv(uploaded_file, dataset_type)
+            except ExcelTimeseriesFormatError as exc:
+                messages.error(request, f"Impossible de traiter le fichier Excel : {exc}")
+                return redirect("profiles")
+            reader = csv.DictReader(io.StringIO(conversion.csv_content))
+        elif uploaded_file.name.lower().endswith(".csv"):
+            try:
+                uploaded_file.seek(0)
+                decoded_content = uploaded_file.read().decode("utf-8")
+            except UnicodeDecodeError:
+                uploaded_file.seek(0)
+                decoded_content = uploaded_file.read().decode("latin-1")
+            finally:
+                uploaded_file.seek(0)
+            reader = csv.DictReader(decoded_content.splitlines())
+        else:
+            messages.error(request, "Format de fichier non supporté. Veuillez fournir un CSV ou un Excel.")
+            return redirect("profiles")
+
         points = []
         for row in reader:
+            production_value = _parse_float(row.get("Production")) if "Production" in row else None
+            consumption_value = _parse_float(row.get("Consommation")) if "Consommation" in row else None
+
+            if production_value is None and dataset_type == "production":
+                production_value = _fallback_numeric(list(row.values()))
+            if consumption_value is None and dataset_type == "consumption":
+                consumption_value = _fallback_numeric(list(row.values()))
+
             points.append({
-                "production": float(row['Production']),
-                "consumption": float(row['Consommation'])
+                "production": float(production_value or 0.0),
+                "consumption": float(consumption_value or 0.0),
             })
 
         if len(points) != 96:
@@ -297,3 +414,37 @@ def project_analysis_page(request, project_id):
     }
 
     return render(request, "core/project_analysis.html", context)
+
+
+def stage_three(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    members = list(project.members.all())
+    member_financials = [MemberFinancials.from_member(m) for m in members]
+
+    form = CommunityScenarioForm(members=members, data=request.POST or None)
+    scenario_result = None
+    tariffs_for_display = DEFAULT_TARIFFS
+
+    if request.method == "POST":
+        if form.is_valid():
+            scenario = form.build_scenario()
+            scenario_result = run_stage_three(member_financials, scenario)
+            if scenario_result is None:
+                messages.warning(request, "Unable to compute the scenario. Please ensure members have consumption data.")
+            else:
+                tariffs_for_display = scenario.tariffs
+        else:
+            messages.error(request, "Please correct the errors below before running Stage 3 analysis.")
+
+    member_overviews = [mf.with_tariffs(tariffs_for_display).build_overview() for mf in member_financials]
+
+    return render(
+        request,
+        "core/stage_three.html",
+        {
+            "project": project,
+            "form": form,
+            "member_overviews": member_overviews,
+            "scenario_result": scenario_result,
+        },
+    )
