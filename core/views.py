@@ -210,7 +210,49 @@ def member_create(request, project_id):
         production_base_total = 0.0
         consumption_base_total = 0.0
 
+        def _resolve_profile_role(profile: Profile) -> tuple[str, bool]:
+            """Return the effective role for a profile and whether it required correction."""
+
+            role = (profile.profile_type or "").strip().lower()
+            if role not in {"production", "consumption"}:
+                role = ""
+
+            totals: dict[str, float] = {}
+            if isinstance(profile.metadata, dict):
+                totals = profile.metadata.get("totals") or {}
+
+            def _as_float(value) -> float:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            prod_total = _as_float(totals.get("production_kwh"))
+            cons_total = _as_float(totals.get("consumption_kwh"))
+
+            corrected = False
+
+            if not role:
+                if prod_total > cons_total and prod_total > 0:
+                    role = "production"
+                    corrected = True
+                elif cons_total > 0:
+                    role = "consumption"
+                    corrected = True
+            elif role == "production" and prod_total == 0 and cons_total > 0:
+                role = "consumption"
+                corrected = True
+            elif role == "consumption" and cons_total == 0 and prod_total > 0:
+                role = "production"
+                corrected = True
+
+            if not role:
+                role = "consumption"
+
+            return role, corrected
+
         for profile in profiles:
+            effective_role, corrected = _resolve_profile_role(profile)
             profile_df = pd.DataFrame(profile.points)
             if "timestamp" not in profile_df or "value_kwh" not in profile_df:
                 messages.error(request, f"Le profil {profile.name} ne contient pas de données exploitables.")
@@ -221,12 +263,22 @@ def member_create(request, project_id):
             profile_df = profile_df.sort_values("timestamp")
             profile_series = profile_df.set_index("timestamp")["value_kwh"].astype(float).fillna(0.0)
 
-            if profile.profile_type == "production":
+            if effective_role == "production":
                 production_series = profile_series if production_series is None else production_series.add(profile_series, fill_value=0)
                 production_base_total += float(profile_series.sum())
             else:
                 consumption_series = profile_series if consumption_series is None else consumption_series.add(profile_series, fill_value=0)
                 consumption_base_total += float(profile_series.sum())
+
+            if corrected:
+                human_role = "production" if effective_role == "production" else "consommation"
+                messages.warning(
+                    request,
+                    (
+                        f"Le profil {profile.name} a été traité comme {human_role} car ses totaux ne correspondaient pas "
+                        "au type déclaré."
+                    ),
+                )
 
         if annual_prod_value is None and production_series is not None and production_base_total > 0:
             annual_prod_value = production_base_total

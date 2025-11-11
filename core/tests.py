@@ -113,6 +113,47 @@ class ProfileBasedMemberGenerationTests(TestCase):
             places=3,
         )
 
+    def test_profile_generation_recovers_from_mislabelled_type(self):
+        mislabelled = Profile.objects.create(
+            name="Profil production mal typé",
+            profile_type="consumption",
+            points=self.production_profile.points,
+            metadata={
+                "row_count": len(self.production_profile.points),
+                "totals": {
+                    "production_kwh": sum(point["value_kwh"] for point in self.production_profile.points),
+                    "consumption_kwh": 0.0,
+                },
+            },
+        )
+
+        url = reverse("member_create", args=[self.project.id])
+        response = self.client.post(
+            url,
+            {
+                "name": "Producteur corrigé",
+                "utility": "Site pilote",
+                "data_mode": "profile_based",
+                "profiles": [str(mislabelled.id)],
+                "annual_consumption_kwh": "",
+                "annual_production_kwh": "",
+                "current_unit_price_eur_per_kwh": "0.25",
+                "current_fixed_fee_eur": "0",
+                "injection_annual_kwh": "0",
+                "injection_unit_price_eur_per_kwh": "0.05",
+            },
+        )
+        self.assertRedirects(response, reverse("project_detail", args=[self.project.id]))
+
+        member = Member.objects.get(project=self.project, name="Producteur corrigé")
+        metadata = member.timeseries_metadata
+        self.assertGreater(metadata["totals"]["production_kwh"], 0)
+        self.assertAlmostEqual(
+            metadata["totals"]["consumption_kwh"],
+            0.0,
+            places=5,
+        )
+
 
 class StageThreeFormsTests(TestCase):
     def test_scenario_form_default_initial(self):
