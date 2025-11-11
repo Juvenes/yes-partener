@@ -11,11 +11,17 @@ urlpatterns = [
     path("projects/<int:project_id>/", v.project_detail, name="project_detail"),
     path("projects/<int:project_id>/members/create/", v.member_create, name="member_create"),
     path("projects/<int:project_id>/analysis/", v.project_analysis_page, name="project_analysis_page"),
+    path("projects/<int:project_id>/stage2/", v.project_stage2, name="project_stage2"),
     path("projects/<int:project_id>/stage3/", v.project_stage3, name="project_stage3"),
     path(
         "projects/<int:project_id>/stage3/members/<int:member_id>/",
         v.stage3_member_update,
         name="stage3_member_update",
+    ),
+    path(
+        "projects/stage2/scenarios/<int:scenario_id>/export/",
+        v.stage2_scenario_csv,
+        name="stage2_scenario_csv",
     ),
     path(
         "projects/<int:project_id>/stage3/scenarios/create/",

@@ -41,6 +41,7 @@
         <h1>Tableau de bord analytique : {{ project.name }}</h1>
       </div>
       <div class="action-buttons">
+        <a href="{% url 'project_stage2' project.id %}" class="btn-secondary">Stage 2 – Partage</a>
         <a href="{% url 'project_stage3' project.id %}" class="btn-primary">Stage 3 – Communauté</a>
       </div>
     </div>

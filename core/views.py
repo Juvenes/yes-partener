@@ -2,13 +2,14 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_http_methods
 from django.http import HttpResponseBadRequest, HttpResponse
 from dataclasses import asdict
-from typing import Dict
+from typing import Dict, List
 from .models import (
     Project,
     Member,
     MemberProfile,
     Profile,
     GlobalParameter,
+    StageTwoScenario,
     StageThreeScenario,
     StageThreeScenarioMember,
 )
@@ -18,9 +19,15 @@ from .forms import (
     MemberProfileForm,
     ProfileForm,
     GlobalParameterForm,
+    StageTwoScenarioForm,
     StageThreeMemberCostForm,
     StageThreeScenarioForm,
     StageThreeScenarioMemberForm,
+)
+from .stage2 import (
+    evaluate_sharing as evaluate_stage_two,
+    build_iteration_configs,
+    load_project_timeseries as load_stage_two_timeseries,
 )
 from .stage3 import (
     ShareConstraint,
@@ -46,6 +53,7 @@ from django.core.files.base import ContentFile
 import io
 from django.db import IntegrityError # Import IntegrityError
 from django.contrib import messages
+from django.utils.text import slugify
 import pandas as pd
 
 
@@ -646,6 +654,172 @@ def project_analysis_page(request, project_id):
     }
 
     return render(request, "core/project_analysis.html", context)
+
+
+def project_stage2(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    all_members = list(project.members.all().order_by("name"))
+    members_with_series = [member for member in all_members if member.timeseries_file]
+    missing_members = [member for member in all_members if not member.timeseries_file]
+
+    scenario_form = StageTwoScenarioForm(
+        request.POST or None,
+        members=members_with_series,
+        prefix="scenario",
+    )
+    iteration_blocks = []
+    for idx in range(1, 4):
+        type_field = scenario_form[f"iteration_{idx}_type"]
+        member_field_names = scenario_form.iteration_member_fields(idx)
+        member_fields = [scenario_form[name] for name in member_field_names]
+        iteration_blocks.append(
+            {
+                "index": idx,
+                "type_field": type_field,
+                "member_fields": member_fields,
+            }
+        )
+
+    if request.method == "POST":
+        if not members_with_series:
+            messages.error(
+                request,
+                "Ajoutez d'abord des séries temporelles (Stage 1) avant de configurer le partage (Stage 2).",
+            )
+        elif scenario_form.is_valid():
+            scenario = scenario_form.save(commit=False)
+            scenario.project = project
+            scenario.save()
+            messages.success(request, "Scénario Stage 2 enregistré.")
+            return redirect("project_stage2", project_id=project.id)
+
+    timeseries_df = None
+    load_warnings: List[str] = []
+    load_error = None
+
+    if members_with_series:
+        try:
+            timeseries_df, load_warnings = load_stage_two_timeseries(members_with_series)
+        except ValueError as exc:
+            load_error = str(exc)
+
+    scenarios = project.stage2_scenarios.all().order_by("name")
+    scenario_cards = []
+
+    key_labels = {
+        "equal": "Clé part égale",
+        "percentage": "Clé pourcentage fixe",
+        "proportional": "Clé proportionnelle conso",
+    }
+
+    if timeseries_df is not None and not timeseries_df.empty:
+        for scenario in scenarios:
+            iteration_payload = build_iteration_configs(
+                scenario.iteration_configs(),
+                members_with_series,
+            )
+            try:
+                evaluation = evaluate_stage_two(
+                    timeseries_df,
+                    members_with_series,
+                    iteration_payload,
+                )
+            except ValueError as exc:
+                scenario_cards.append(
+                    {
+                        "scenario": scenario,
+                        "error": str(exc),
+                        "iterations": [],
+                    }
+                )
+                continue
+
+            preview = evaluation.timeline.head(6)
+            if not preview.empty:
+                preview_copy = preview.copy()
+                preview_copy["timestamp"] = preview_copy["timestamp"].astype(str)
+                preview_records = preview_copy.to_dict(orient="records")
+            else:
+                preview_records = []
+            iteration_display = [
+                {
+                    "order": cfg.order,
+                    "label": key_labels.get(cfg.key_type, cfg.key_type),
+                    "raw": cfg.key_type,
+                }
+                for cfg in iteration_payload
+            ]
+            scenario_cards.append(
+                {
+                    "scenario": scenario,
+                    "evaluation": evaluation,
+                    "member_summaries": evaluation.member_summaries,
+                    "iteration_stats": evaluation.iteration_stats,
+                    "preview": preview_records,
+                    "iterations": iteration_display,
+                    "warnings": evaluation.warnings,
+                }
+            )
+    elif scenarios and load_error:
+        messages.warning(request, load_error)
+
+    context = {
+        "project": project,
+        "scenario_form": scenario_form,
+        "scenario_cards": scenario_cards,
+        "members_with_series": members_with_series,
+        "missing_members": missing_members,
+        "load_warnings": load_warnings,
+        "load_error": load_error,
+        "iteration_blocks": iteration_blocks,
+    }
+
+    return render(request, "core/project_stage2.html", context)
+
+
+def stage2_scenario_csv(request, scenario_id):
+    scenario = get_object_or_404(StageTwoScenario, pk=scenario_id)
+    project = scenario.project
+    members = list(project.members.all().order_by("name"))
+    members_with_series = [member for member in members if member.timeseries_file]
+
+    if not members_with_series:
+        messages.error(request, "Aucun membre ne possède de série temporelle exploitable.")
+        return redirect("project_stage2", project_id=project.id)
+
+    try:
+        timeseries_df, _ = load_stage_two_timeseries(members_with_series)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("project_stage2", project_id=project.id)
+
+    iterations = build_iteration_configs(scenario.iteration_configs(), members_with_series)
+    try:
+        evaluation = evaluate_stage_two(timeseries_df, members_with_series, iterations)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("project_stage2", project_id=project.id)
+
+    timeline = evaluation.timeline.copy()
+    if timeline.empty:
+        messages.warning(request, "Aucune donnée à exporter pour ce scénario.")
+        return redirect("project_stage2", project_id=project.id)
+
+    if hasattr(timeline["timestamp"], "dt"):
+        timeline["timestamp"] = timeline["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        timeline["timestamp"] = timeline["timestamp"].astype(str)
+
+    response = HttpResponse(content_type="text/csv")
+    filename = f"stage2_{slugify(project.name)}_{slugify(scenario.name)}.csv"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response)
+    writer.writerow(timeline.columns)
+    for row in timeline.itertuples(index=False):
+        writer.writerow(row)
+
+    return response
 
 
 def project_stage3(request, project_id):

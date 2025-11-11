@@ -2,11 +2,12 @@ import os
 from datetime import datetime, timedelta
 from tempfile import NamedTemporaryFile
 
+from django.core.files.base import ContentFile
 from django.test import TestCase
 from django.urls import reverse
 
-from .forms import StageThreeScenarioForm, StageThreeScenarioMemberForm
-from .models import Member, Profile, Project, StageThreeScenario
+from .forms import StageTwoScenarioForm, StageThreeScenarioForm, StageThreeScenarioMemberForm
+from .models import Member, Profile, Project, StageTwoScenario, StageThreeScenario
 from .stage3 import (
     ShareConstraint,
     build_member_inputs,
@@ -16,6 +17,7 @@ from .stage3 import (
     optimize_total_cost,
     reference_cost_guide,
 )
+from .stage2 import load_project_timeseries, build_iteration_configs, evaluate_sharing
 from .timeseries import parse_profile_timeseries
 
 
@@ -316,3 +318,89 @@ class StageThreeFormTests(TestCase):
         )
         self.assertFalse(form.is_valid())
         self.assertIn("borne minimale", form.errors.as_text())
+
+
+class StageTwoScenarioFormTests(TestCase):
+    def setUp(self):
+        self.project = Project.objects.create(name="Stage2 Form Project")
+        self.member_a = Member.objects.create(project=self.project, name="Alpha")
+        self.member_b = Member.objects.create(project=self.project, name="Bravo")
+
+    def test_percentage_iteration_normalises_values(self):
+        form = StageTwoScenarioForm(
+            data={
+                "name": "Scénario test",
+                "description": "Démo",
+                "iteration_1_type": "percentage",
+                f"iteration_1_member_{self.member_a.id}": "60",
+                f"iteration_1_member_{self.member_b.id}": "40",
+                "iteration_2_type": "equal",
+                "iteration_3_type": "none",
+            },
+            members=[self.member_a, self.member_b],
+        )
+
+        self.assertTrue(form.is_valid())
+        payload = form.cleaned_data["iterations_payload"]
+        self.assertEqual(len(payload), 2)
+        first = payload[0]
+        self.assertEqual(first["key_type"], "percentage")
+        self.assertAlmostEqual(first["percentages"][self.member_a.id], 0.6)
+        self.assertAlmostEqual(first["percentages"][self.member_b.id], 0.4)
+        second = payload[1]
+        self.assertEqual(second["key_type"], "equal")
+
+        scenario = form.save(commit=False)
+        scenario.project = self.project
+        scenario.save()
+        self.assertEqual(len(scenario.iterations), 2)
+
+
+class StageTwoEvaluationTests(TestCase):
+    def setUp(self):
+        self.project = Project.objects.create(name="Stage2 Eval Project")
+        self.producer = Member.objects.create(project=self.project, name="Producteur")
+        self.consumer = Member.objects.create(project=self.project, name="Consommateur")
+
+        producer_csv = "Time,Production,Consommation\n2024-01-01 00:15,6,1\n2024-01-01 00:30,4,1\n"
+        consumer_csv = "Time,Production,Consommation\n2024-01-01 00:15,0,4\n2024-01-01 00:30,0,2\n"
+        self.producer.timeseries_file.save("producer.csv", ContentFile(producer_csv), save=True)
+        self.consumer.timeseries_file.save("consumer.csv", ContentFile(consumer_csv), save=True)
+
+    def test_equal_then_proportional_allocation(self):
+        scenario = StageTwoScenario.objects.create(
+            project=self.project,
+            name="Partage test",
+            iterations=[
+                {"order": 1, "key_type": "equal", "percentages": {}},
+                {"order": 2, "key_type": "proportional", "percentages": {}},
+            ],
+        )
+
+        timeseries_df, warnings = load_project_timeseries([self.producer, self.consumer])
+        self.assertFalse(timeseries_df.empty)
+        self.assertEqual(warnings, [])
+
+        configs = build_iteration_configs(scenario.iteration_configs(), [self.producer, self.consumer])
+        evaluation = evaluate_sharing(timeseries_df, [self.producer, self.consumer], configs)
+
+        self.assertAlmostEqual(evaluation.total_community_allocation_kwh, 8.0)
+        self.assertAlmostEqual(evaluation.total_remaining_production_kwh, 2.0)
+        self.assertAlmostEqual(evaluation.total_unserved_consumption_kwh, 0.0)
+        self.assertEqual(len(evaluation.warnings), 2)
+        self.assertIn("Itération 2", evaluation.warnings[0])
+
+        summaries = {summary.member_name: summary for summary in evaluation.member_summaries}
+        producer_summary = summaries["Producteur"]
+        consumer_summary = summaries["Consommateur"]
+
+        self.assertAlmostEqual(producer_summary.total_production_kwh, 10.0)
+        self.assertAlmostEqual(producer_summary.shared_production_kwh, 8.0)
+        self.assertAlmostEqual(producer_summary.unused_production_kwh, 2.0)
+        self.assertAlmostEqual(producer_summary.community_consumption_kwh, 2.0)
+        self.assertAlmostEqual(producer_summary.external_consumption_kwh, 0.0)
+
+        self.assertAlmostEqual(consumer_summary.total_consumption_kwh, 6.0)
+        self.assertAlmostEqual(consumer_summary.community_consumption_kwh, 6.0)
+        self.assertAlmostEqual(consumer_summary.external_consumption_kwh, 0.0)
+        self.assertAlmostEqual(consumer_summary.total_production_kwh, 0.0)

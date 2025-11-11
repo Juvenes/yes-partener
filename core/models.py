@@ -114,6 +114,69 @@ class GlobalParameter(models.Model):
         return self.key
 
 
+class StageTwoScenario(models.Model):
+    KEY_TYPE_CHOICES = [
+        ("equal", "Clé part égale"),
+        ("percentage", "Clé pourcentage fixe"),
+        ("proportional", "Clé proportionnelle à la consommation"),
+    ]
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="stage2_scenarios",
+    )
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    iterations = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("project", "name")
+        ordering = ["project", "name"]
+
+    def __str__(self):
+        return f"{self.project.name} – {self.name}"
+
+    def iteration_configs(self):
+        configs = []
+        allowed = {choice[0] for choice in self.KEY_TYPE_CHOICES}
+        raw_iterations = self.iterations or []
+        for index, payload in enumerate(raw_iterations, start=1):
+            if not isinstance(payload, dict):
+                continue
+            key_type = payload.get("key_type")
+            if key_type not in allowed:
+                continue
+            order = payload.get("order") or index
+            try:
+                order = int(order)
+            except (TypeError, ValueError):
+                order = index
+
+            raw_percentages = payload.get("percentages") or {}
+            percentages = {}
+            if isinstance(raw_percentages, dict):
+                for member_id, value in raw_percentages.items():
+                    try:
+                        member_key = int(member_id)
+                        percentages[member_key] = float(value)
+                    except (TypeError, ValueError):
+                        continue
+
+            configs.append(
+                {
+                    "order": order,
+                    "key_type": key_type,
+                    "percentages": percentages,
+                }
+            )
+
+        configs.sort(key=lambda item: item.get("order", 0))
+        return configs
+
+
 class StageThreeScenario(models.Model):
     FEE_ALLOCATION_CHOICES = [
         ("all_members", "Répartition égale (tous les membres)"),

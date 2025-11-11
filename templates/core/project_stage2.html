@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ project.name }} — Stage 2 : Partage d'énergie</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f4f5fb; margin: 2rem; }
+    a { color: #0d47a1; }
+    h1 { margin-bottom: 0.5rem; }
+    h2 { margin-top: 2.25rem; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: .6rem 1rem; border-radius: 8px; border: none; background: #0d47a1; color: #fff; cursor: pointer; text-decoration: none; font-weight: 600; }
+    .btn-secondary { background: #263238; }
+    .btn-neutral { background: #5f6c85; }
+    .btn[disabled] { opacity: .6; cursor: not-allowed; }
+    .header { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    .breadcrumbs { font-size: .95rem; margin-bottom: .75rem; }
+    .messages { list-style: none; margin: 1.5rem 0; padding: 0; }
+    .messages li { padding: 1rem; border-radius: 10px; margin-bottom: .75rem; }
+    .messages li.success { background: #e8f5e9; color: #1b5e20; }
+    .messages li.error { background: #ffebee; color: #c62828; }
+    .messages li.warning { background: #fff8e1; color: #ff8f00; }
+    .card { background: #fff; border-radius: 14px; padding: 1.4rem 1.6rem; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08); }
+    .muted { color: #5f6368; font-size: .95rem; }
+    .grid { display: grid; gap: 1.25rem; }
+    .key-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; margin-top: 1.2rem; }
+    .key-card { background: #fff; border-radius: 12px; padding: 1.2rem; box-shadow: 0 8px 20px rgba(30, 41, 59, 0.08); }
+    .key-card h3 { margin-top: 0; margin-bottom: .4rem; }
+    .key-card ul { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .9rem; color: #455a64; }
+    form label { font-size: .9rem; color: #1a237e; display: flex; flex-direction: column; gap: .35rem; }
+    input, textarea, select { font: inherit; padding: .55rem .65rem; border-radius: 6px; border: 1px solid #cfd8dc; background: #fff; }
+    textarea { resize: vertical; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .iteration-block { margin-top: 1.3rem; background: #f6f8ff; border-radius: 12px; padding: 1.1rem 1.3rem; }
+    .iteration-block h3 { margin-top: 0; margin-bottom: .6rem; }
+    .iteration-select { max-width: 260px; }
+    .percentage-table { width: 100%; border-collapse: collapse; margin-top: .75rem; }
+    .percentage-table th, .percentage-table td { border-bottom: 1px solid #dde3f0; padding: .55rem .35rem; text-align: left; font-size: .9rem; }
+    .percentage-table th { font-weight: 600; color: #37474f; }
+    .percentage-table input { width: 100%; }
+    .scenario-section { margin-top: 2.5rem; }
+    .scenario-card { background: #fff; border-radius: 14px; padding: 1.4rem 1.6rem; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08); margin-bottom: 1.8rem; }
+    .scenario-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; }
+    .scenario-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border-bottom: 1px solid #eceff1; padding: .75rem .5rem; text-align: left; font-size: .95rem; }
+    th { font-weight: 600; color: #37474f; }
+    tbody tr:hover { background: #f8f9ff; }
+    .pill { display: inline-flex; align-items: center; padding: .25rem .6rem; border-radius: 999px; font-size: .8rem; background: #e3f2fd; color: #0d47a1; margin-right: .4rem; }
+    .warning-box { margin-top: 1.2rem; background: #fff8e1; color: #bf6b00; padding: .85rem 1.1rem; border-radius: 10px; }
+    .preview-table { font-size: .85rem; }
+    .empty-state { text-align: center; padding: 2rem; color: #607d8b; background: #fff; border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(96, 125, 139, 0.12); margin-top: 1.5rem; }
+    @media (max-width: 720px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .scenario-header { flex-direction: column; align-items: flex-start; }
+      .scenario-actions { width: 100%; }
+      .iteration-select { max-width: none; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="breadcrumbs">
+    <a href="{% url 'project_list' %}">Projets</a> · <a href="{% url 'project_detail' project.id %}">{{ project.name }}</a> · Stage 2
+  </div>
+  <div class="header">
+    <div>
+      <h1>{{ project.name }} — Stage 2 : Partage d'énergie</h1>
+      <p class="muted">Définir les clés de partage pour répartir la production locale entre les membres et suivre les flux restants.</p>
+    </div>
+    <div class="scenario-actions">
+      <a href="{% url 'project_detail' project.id %}" class="btn-secondary btn">Retour phase 1</a>
+      <a href="{% url 'project_analysis_page' project.id %}" class="btn">Analyse des données</a>
+      <a href="{% url 'project_stage3' project.id %}" class="btn-neutral btn">Stage 3</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    <ul class="messages">
+      {% for message in messages %}
+        <li class="{{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <section class="card">
+    <h2>Clés de partage disponibles</h2>
+    <p class="muted">Stage 2 s'exécute sur chaque pas de 15 minutes : la production locale est allouée successivement selon vos itérations. Trois approches sont proposées et peuvent être combinées dans l'ordre de votre choix.</p>
+    <div class="key-grid">
+      <div class="key-card">
+        <h3>Clé part égale</h3>
+        <p class="muted">Chaque membre actif reçoit une part identique de l'énergie disponible, limitée par sa consommation restante.</p>
+        <ul>
+          <li>Simple et équilibrée lorsque les profils sont similaires.</li>
+          <li>Ignorée pour les membres sans demande au pas considéré.</li>
+        </ul>
+      </div>
+      <div class="key-card">
+        <h3>Clé pourcentage fixe</h3>
+        <p class="muted">Vous définissez une répartition contractuelle (somme = 100&nbsp;%). La part attribuée est plafonnée par la demande résiduelle.</p>
+        <ul>
+          <li>Idéal pour refléter un investissement ou un accord statique.</li>
+          <li>Les valeurs peuvent être ajustées par itération.</li>
+        </ul>
+      </div>
+      <div class="key-card">
+        <h3>Clé proportionnelle à la consommation</h3>
+        <p class="muted">La production est distribuée dynamiquement selon la consommation instantanée restante des membres.</p>
+        <ul>
+          <li>Maximise l'autoconsommation collective.</li>
+          <li>Les membres sans demande sont ignorés automatiquement.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  {% if missing_members %}
+    <div class="warning-box" style="margin-top:1.2rem;">
+      <strong>Membres sans série temporelle :</strong>
+      {% for member in missing_members %}{{ member.name }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+      Importez leurs données (Stage 1) pour qu'ils participent au partage.
+    </div>
+  {% endif %}
+
+  {% if load_warnings %}
+    <div class="warning-box">
+      <strong>Attention :</strong>
+      <ul style="margin:.4rem 0 0; padding-left:1.2rem;">
+        {% for warn in load_warnings %}
+          <li>{{ warn }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <section class="card" style="margin-top:2rem;">
+    <h2>Créer un scénario Stage 2</h2>
+    {% if not members_with_series %}
+      <p class="muted">Ajoutez au moins un membre avec série temporelle pour configurer un scénario.</p>
+    {% endif %}
+    <form method="post" class="grid">
+      {% csrf_token %}
+      <div class="form-grid">
+        <label>Nom du scénario
+          {{ scenario_form.name }}
+          {% if scenario_form.name.errors %}<span class="error">{{ scenario_form.name.errors|join:', ' }}</span>{% endif %}
+        </label>
+        <label>Notes
+          {{ scenario_form.description }}
+          {% if scenario_form.description.errors %}<span class="error">{{ scenario_form.description.errors|join:', ' }}</span>{% endif %}
+        </label>
+      </div>
+
+      {% if scenario_form.non_field_errors %}
+        <div class="warning-box">{{ scenario_form.non_field_errors|join:' ' }}</div>
+      {% endif %}
+
+      {% for block in iteration_blocks %}
+        <div class="iteration-block">
+          <div style="display:flex; align-items:center; justify-content: space-between; gap:1rem; flex-wrap:wrap;">
+            <h3>Itération {{ block.index }}</h3>
+            <div class="iteration-select">
+              {{ block.type_field }}
+            </div>
+          </div>
+          {% if block.type_field.errors %}
+            <div class="warning-box" style="margin-top:.75rem;">{{ block.type_field.errors|join:', ' }}</div>
+          {% endif %}
+          {% if block.member_fields %}
+            <p class="muted" style="margin:.75rem 0 .35rem;">Indiquez la répartition (total = 100&nbsp;%). Ces valeurs ne sont utilisées que pour la clé «&nbsp;pourcentage fixe&nbsp;».</p>
+            <table class="percentage-table">
+              <thead>
+                <tr>
+                  <th>Membre</th>
+                  <th>Part (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for field in block.member_fields %}
+                  <tr>
+                    <td>{{ field.label }}</td>
+                    <td>
+                      {{ field }}
+                      {% if field.errors %}<div class="error">{{ field.errors|join:', ' }}</div>{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      <div>
+        <button type="submit" class="btn" {% if not members_with_series %}disabled{% endif %}>Enregistrer le scénario</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="scenario-section">
+    <h2>Scénarios enregistrés</h2>
+    {% if not scenario_cards %}
+      <div class="empty-state">
+        {% if members_with_series %}
+          <p>Aucun scénario Stage 2 n'a encore été défini. Créez un scénario pour analyser la répartition de l'énergie.</p>
+        {% else %}
+          <p>Importez d'abord les données (Stage 1) afin de calculer la répartition communautaire.</p>
+        {% endif %}
+      </div>
+    {% else %}
+      {% for card in scenario_cards %}
+        <div class="scenario-card">
+          <div class="scenario-header">
+            <div>
+              <h3>{{ card.scenario.name }}</h3>
+              {% if card.scenario.description %}<p class="muted">{{ card.scenario.description }}</p>{% endif %}
+              <div>
+                {% for config in card.iterations %}
+                  <span class="pill">Itération {{ config.order }} · {{ config.label }}</span>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="scenario-actions">
+              <a href="{% url 'stage2_scenario_csv' card.scenario.id %}" class="btn" style="background:#1b5e20;">Exporter CSV</a>
+            </div>
+          </div>
+
+          {% if card.error %}
+            <div class="warning-box" style="margin-top:1rem;">{{ card.error }}</div>
+          {% else %}
+            <div class="grid" style="margin-top:1.2rem;">
+              <div class="card" style="margin:0; background:#f4f7ff;">
+                <h4 style="margin-top:0;">Synthèse</h4>
+                <p class="muted">Énergie communautaire distribuée : <strong>{{ card.evaluation.total_community_allocation_kwh|floatformat:2 }} kWh</strong></p>
+                <p class="muted">Production restant à partager : <strong>{{ card.evaluation.total_remaining_production_kwh|floatformat:2 }} kWh</strong></p>
+                <p class="muted">Consommation non couverte : <strong>{{ card.evaluation.total_unserved_consumption_kwh|floatformat:2 }} kWh</strong></p>
+              </div>
+
+              <div class="card" style="margin:0;">
+                <h4 style="margin-top:0;">Itérations</h4>
+                {% if card.iteration_stats %}
+                  <table class="preview-table">
+                    <thead>
+                      <tr>
+                        <th>Itération</th>
+                        <th>Clé</th>
+                        <th>Énergie allouée (kWh)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for stat in card.iteration_stats %}
+                        <tr>
+                          <td>{{ stat.order }}</td>
+                          <td>{{ stat.key_type }}</td>
+                          <td>{{ stat.allocated_kwh|floatformat:2 }}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                {% else %}
+                  <p class="muted">Aucune allocation enregistrée.</p>
+                {% endif %}
+              </div>
+            </div>
+
+            <h4 style="margin-top:1.8rem;">Répartition par membre</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>Membre</th>
+                  <th>Production totale (kWh)</th>
+                  <th>Part partagée (kWh)</th>
+                  <th>Production restante (kWh)</th>
+                  <th>Consommation totale (kWh)</th>
+                  <th>Couverture communauté (kWh)</th>
+                  <th>Consommation résiduelle (kWh)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for summary in card.member_summaries %}
+                  <tr>
+                    <td>{{ summary.member_name }}</td>
+                    <td>{{ summary.total_production_kwh|floatformat:2 }}</td>
+                    <td>{{ summary.shared_production_kwh|floatformat:2 }}</td>
+                    <td>{{ summary.unused_production_kwh|floatformat:2 }}</td>
+                    <td>{{ summary.total_consumption_kwh|floatformat:2 }}</td>
+                    <td>{{ summary.community_consumption_kwh|floatformat:2 }}</td>
+                    <td>{{ summary.external_consumption_kwh|floatformat:2 }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+
+            {% if card.preview %}
+              <details style="margin-top:1.6rem;">
+                <summary>Prévisualiser les 6 premiers pas de temps</summary>
+                <table class="preview-table">
+                  <thead>
+                    <tr>
+                      <th>Horodatage</th>
+                      <th>Énergie communautaire (kWh)</th>
+                      <th>Production restante (kWh)</th>
+                      <th>Consommation résiduelle (kWh)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in card.preview %}
+                      <tr>
+                        <td>{{ row.timestamp }}</td>
+                        <td>{{ row.community_allocated_kwh|floatformat:2 }}</td>
+                        <td>{{ row.remaining_production_kwh|floatformat:2 }}</td>
+                        <td>{{ row.remaining_consumption_kwh|floatformat:2 }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </details>
+            {% endif %}
+
+            {% if card.warnings %}
+              <div class="warning-box" style="margin-top:1.2rem;">
+                <strong>Observations :</strong>
+                <ul style="margin:.4rem 0 0; padding-left:1.2rem;">
+                  {% for warn in card.warnings %}
+                    <li>{{ warn }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            {% endif %}
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% endif %}
+  </section>
+</body>
+</html>

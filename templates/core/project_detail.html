@@ -31,6 +31,7 @@
       <h1>{{ project.name }} — Phase 1 : Ingestion</h1>
       <div class="btn-group">
           <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="text-decoration: none;">Analyser le projet &rarr;</a>
+          <a href="{% url 'project_stage2' project.id %}" class="btn" style="text-decoration: none; background: #3949ab;">Stage 2 – Partage &rarr;</a>
           <a href="{% url 'project_stage3' project.id %}" class="btn" style="text-decoration: none; background: #0d47a1;">Stage 3 – Communauté &rarr;</a>
       </div>
   </div>

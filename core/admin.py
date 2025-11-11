@@ -5,6 +5,7 @@ from .models import (
     Profile,
     MemberProfile,
     GlobalParameter,
+    StageTwoScenario,
     StageThreeScenario,
     StageThreeScenarioMember,
 )
@@ -34,6 +35,13 @@ class ProfileAdmin(admin.ModelAdmin):
 class GlobalParameterAdmin(admin.ModelAdmin):
     list_display = ("key", "updated_at")
     search_fields = ("key",)
+
+
+@admin.register(StageTwoScenario)
+class StageTwoScenarioAdmin(admin.ModelAdmin):
+    list_display = ("name", "project", "created_at", "updated_at")
+    list_filter = ("project",)
+    search_fields = ("name", "project__name")
 
 
 class StageThreeScenarioMemberInline(admin.TabularInline):
