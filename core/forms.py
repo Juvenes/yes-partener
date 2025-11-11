@@ -69,6 +69,22 @@ class StageThreeMemberCostForm(forms.ModelForm):
 
 
 class StageThreeScenarioForm(forms.ModelForm):
+    @classmethod
+    def default_initial(cls):
+        return {
+            "community_price_eur_per_kwh": 0.07,
+            "price_min_eur_per_kwh": 0.05,
+            "price_max_eur_per_kwh": 0.09,
+            "price_step_eur_per_kwh": 0.005,
+            "default_share": 0.8,
+            "coverage_cap": 1.0,
+            "community_variable_fee_eur_per_kwh": 0.009,
+            "community_fixed_fee_total_eur": 75.0,
+            "community_per_member_fee_eur": 100.0,
+            "community_injection_price_eur_per_kwh": 0.05,
+            "tariff_context": "community_grid",
+        }
+
     class Meta:
         model = StageThreeScenario
         fields = [
@@ -81,7 +97,10 @@ class StageThreeScenarioForm(forms.ModelForm):
             "coverage_cap",
             "community_fixed_fee_total_eur",
             "community_per_member_fee_eur",
+            "community_variable_fee_eur_per_kwh",
+            "community_injection_price_eur_per_kwh",
             "fee_allocation",
+            "tariff_context",
             "notes",
         ]
         widgets = {
@@ -93,6 +112,8 @@ class StageThreeScenarioForm(forms.ModelForm):
             "coverage_cap": forms.NumberInput(attrs={"step": "0.05", "min": "0", "max": "1"}),
             "community_fixed_fee_total_eur": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "community_per_member_fee_eur": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+            "community_variable_fee_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+            "community_injection_price_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
             "notes": forms.TextInput(attrs={"placeholder": "Contexte ou hypothèses"}),
         }
 

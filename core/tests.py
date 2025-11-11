@@ -14,6 +14,7 @@ from .stage3 import (
     evaluate_scenario,
     optimize_member_cost,
     optimize_total_cost,
+    reference_cost_guide,
 )
 from .timeseries import parse_profile_timeseries
 
@@ -113,6 +114,14 @@ class ProfileBasedMemberGenerationTests(TestCase):
         )
 
 
+class StageThreeFormsTests(TestCase):
+    def test_scenario_form_default_initial(self):
+        defaults = StageThreeScenarioForm.default_initial()
+        self.assertAlmostEqual(defaults["community_price_eur_per_kwh"], 0.07)
+        self.assertEqual(defaults["tariff_context"], "community_grid")
+        self.assertGreater(defaults["community_variable_fee_eur_per_kwh"], 0)
+
+
 class StageThreeCalculatorTests(TestCase):
     def setUp(self):
         self.project = Project.objects.create(name="Stage3 Test Project")
@@ -166,6 +175,34 @@ class StageThreeCalculatorTests(TestCase):
         self.assertAlmostEqual(breakdown_alpha.share, 1.0)
         self.assertAlmostEqual(breakdown_alpha.community_cost, 2050.0, places=2)
 
+    def test_evaluate_scenario_includes_variable_fee_and_injection_override(self):
+        scenario = StageThreeScenario.objects.create(
+            project=self.project,
+            name="Variable",
+            community_price_eur_per_kwh=0.20,
+            default_share=0.0,
+            coverage_cap=1.0,
+            community_variable_fee_eur_per_kwh=0.01,
+            community_injection_price_eur_per_kwh=0.06,
+        )
+        self.member_a.injection_annual_kwh = 500
+        self.member_a.injection_unit_price_eur_per_kwh = 0.04
+        self.member_a.save()
+
+        constraints = {
+            self.member_a.id: ShareConstraint(min_share=1.0, max_share=1.0, override=1.0),
+            self.member_b.id: ShareConstraint(min_share=0.0, max_share=0.0, override=0.0),
+        }
+        params = build_scenario_parameters(scenario, constraints)
+        evaluation = evaluate_scenario(self._inputs(), params)
+
+        breakdown_alpha = next(
+            b for b in evaluation.member_breakdowns if b.member_id == self.member_a.id
+        )
+        self.assertAlmostEqual(breakdown_alpha.community_variable_cost, 100.0, places=2)
+        self.assertAlmostEqual(breakdown_alpha.injection_revenue, 30.0, places=2)
+        self.assertAlmostEqual(breakdown_alpha.community_cost, 2170.0, places=2)
+
     def test_optimize_total_cost_prefers_community_when_cheaper(self):
         scenario = StageThreeScenario.objects.create(
             project=self.project,
@@ -197,6 +234,15 @@ class StageThreeCalculatorTests(TestCase):
         self.assertIsNotNone(result)
         self.assertIn(self.member_a.id, result.shares)
         self.assertGreaterEqual(result.shares[self.member_a.id], 0.0)
+
+
+class StageThreeReferenceTests(TestCase):
+    def test_reference_cost_guide_totals(self):
+        guide = reference_cost_guide()
+        self.assertIn("traditional", guide)
+        self.assertIn("community_grid", guide)
+        self.assertGreater(guide["traditional"].total_eur_per_kwh, 0)
+        self.assertGreater(len(guide["community_grid"].components), 0)
 
 
 class StageThreeFormTests(TestCase):

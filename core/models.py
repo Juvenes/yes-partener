@@ -121,6 +121,12 @@ class StageThreeScenario(models.Model):
         ("consumption", "Proportionnelle à l'énergie communautaire"),
     ]
 
+    TARIFF_CONTEXT_CHOICES = [
+        ("community_grid", "Communauté via réseau public"),
+        ("community_same_site", "Communauté même bâtiment"),
+        ("traditional", "Facture fournisseur de référence"),
+    ]
+
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -170,10 +176,27 @@ class StageThreeScenario(models.Model):
         validators=[MinValueValidator(0.0)],
         help_text="Frais annuels individuels (€/an) pour les membres participants.",
     )
+    community_variable_fee_eur_per_kwh = models.FloatField(
+        default=0.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Frais variables appliqués à chaque kWh communautaire (€/kWh).",
+    )
+    community_injection_price_eur_per_kwh = models.FloatField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0.0)],
+        help_text="Tarif interne pour rémunérer l'injection (€/kWh). Laisser vide pour utiliser le tarif membre.",
+    )
     fee_allocation = models.CharField(
         max_length=20,
         choices=FEE_ALLOCATION_CHOICES,
         default="participants",
+    )
+    tariff_context = models.CharField(
+        max_length=40,
+        choices=TARIFF_CONTEXT_CHOICES,
+        default="community_grid",
+        help_text="Cadre réglementaire utilisé pour expliquer les composantes de coût.",
     )
     notes = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

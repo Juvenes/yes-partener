@@ -30,6 +30,38 @@ class MemberCostInput:
         return self.current_cost() / self.consumption_kwh
 
 
+@dataclass(frozen=True)
+class CostComponent:
+    """Reference information for explaining electricity invoices."""
+
+    key: str
+    label: str
+    value_eur_per_mwh: float
+    description: str
+    adjustable: bool
+
+    @property
+    def value_eur_per_kwh(self) -> float:
+        return round(self.value_eur_per_mwh / 1000.0, 6)
+
+
+@dataclass(frozen=True)
+class CostGuideSection:
+    key: str
+    title: str
+    subtitle: str
+    components: List[CostComponent]
+    notes: List[str]
+
+    @property
+    def total_eur_per_mwh(self) -> float:
+        return round(sum(component.value_eur_per_mwh for component in self.components), 4)
+
+    @property
+    def total_eur_per_kwh(self) -> float:
+        return round(self.total_eur_per_mwh / 1000.0, 6)
+
+
 @dataclass
 class ShareConstraint:
     min_share: float = 0.0
@@ -54,6 +86,9 @@ class ScenarioParameters:
     community_fixed_fee_total_eur: float
     community_per_member_fee_eur: float
     fee_allocation: str
+    community_variable_fee_eur_per_kwh: float
+    community_injection_price_eur_per_kwh: Optional[float]
+    tariff_context: str
     member_constraints: Dict[int, ShareConstraint] = field(default_factory=dict)
 
     def share_for_member(self, member_id: int) -> ShareConstraint:
@@ -88,6 +123,14 @@ class MemberCostBreakdown:
     delta_cost: float
     cost_per_kwh_now: float
     cost_per_kwh_community: float
+    community_energy_cost: float
+    community_variable_cost: float
+    supplier_energy_cost: float
+    shared_fee_component: float
+    per_member_fee_component: float
+    fixed_fee_component: float
+    injection_revenue: float
+    current_energy_cost: float
     utility: str = ""
 
 
@@ -126,6 +169,216 @@ FEE_ALLOCATION_PARTICIPANTS = "participants"
 FEE_ALLOCATION_CONSUMPTION = "consumption"
 
 
+def reference_cost_guide() -> Dict[str, CostGuideSection]:
+    """Return static explanatory data for Stage 3 based on Belgian reference values."""
+
+    traditional_components = [
+        CostComponent(
+            key="energy",
+            label="Énergie (fournisseur)",
+            value_eur_per_mwh=130.8,
+            description="Achat de l'électricité auprès du fournisseur classique.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="distribution",
+            label="Tarif de distribution (DSO)",
+            value_eur_per_mwh=101.8,
+            description="Utilisation du réseau local basse tension.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="transport",
+            label="Tarif de transport (TSO)",
+            value_eur_per_mwh=28.1,
+            description="Acheminement haute tension par Elia.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="green",
+            label="Soutien énergie verte",
+            value_eur_per_mwh=28.38,
+            description="Certificats verts et obligations régionales.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="connection",
+            label="Redevance d'accès",
+            value_eur_per_mwh=0.75,
+            description="Autres surcharges régulées au kWh.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="excise",
+            label="Accise spéciale",
+            value_eur_per_mwh=14.21,
+            description="Taxe fédérale sur l'électricité.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="levy",
+            label="Contribution énergie",
+            value_eur_per_mwh=1.92,
+            description="Contribution additionnelle régionale.",
+            adjustable=False,
+        ),
+    ]
+
+    community_components = [
+        CostComponent(
+            key="energy",
+            label="Prix interne communauté",
+            value_eur_per_mwh=70.0,
+            description="Prix cible fixé par la communauté (ajustable).",
+            adjustable=True,
+        ),
+        CostComponent(
+            key="distribution",
+            label="Tarif distribution (réseau public)",
+            value_eur_per_mwh=101.8,
+            description="Toujours dû lorsque l'énergie transite par le réseau public.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="transport",
+            label="Tarif transport",
+            value_eur_per_mwh=28.1,
+            description="Part haute tension inchangée.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="green",
+            label="Soutien énergie verte",
+            value_eur_per_mwh=28.38,
+            description="Certificats verts toujours dus.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="connection",
+            label="Redevance d'accès",
+            value_eur_per_mwh=0.75,
+            description="Autres redevances régulées.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="excise",
+            label="Accise spéciale",
+            value_eur_per_mwh=14.21,
+            description="Taxe fédérale identique.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="levy",
+            label="Contribution énergie",
+            value_eur_per_mwh=1.92,
+            description="Contribution régionale.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="community_variable",
+            label="Frais variable communauté",
+            value_eur_per_mwh=9.0,
+            description="Gestion / maintenance mutualisée (ajustable).",
+            adjustable=True,
+        ),
+    ]
+
+    same_site_components = [
+        CostComponent(
+            key="energy",
+            label="Prix interne communauté",
+            value_eur_per_mwh=70.0,
+            description="Prix interne cible.",
+            adjustable=True,
+        ),
+        CostComponent(
+            key="distribution",
+            label="Distribution réduite (site unique)",
+            value_eur_per_mwh=20.36,
+            description="Tarif DSO réduit pour flux internes.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="transport",
+            label="Transport réduit",
+            value_eur_per_mwh=5.62,
+            description="Tarif TSO réduit dans le bâtiment.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="green",
+            label="Soutien énergie verte",
+            value_eur_per_mwh=28.38,
+            description="Obligation certificats verts.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="connection",
+            label="Redevance d'accès",
+            value_eur_per_mwh=0.75,
+            description="Autres redevances.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="excise",
+            label="Accise spéciale",
+            value_eur_per_mwh=14.21,
+            description="Taxe fédérale.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="levy",
+            label="Contribution énergie",
+            value_eur_per_mwh=1.92,
+            description="Contribution régionale.",
+            adjustable=False,
+        ),
+        CostComponent(
+            key="community_variable",
+            label="Frais variable communauté",
+            value_eur_per_mwh=9.0,
+            description="Gestion mutualisée.",
+            adjustable=True,
+        ),
+    ]
+
+    guide = {
+        "traditional": CostGuideSection(
+            key="traditional",
+            title="Facture fournisseur classique",
+            subtitle="Structure réglementée pour un contrat individuel en Wallonie.",
+            components=traditional_components,
+            notes=[
+                "Les montants sont exprimés en €/MWh (division par 1000 pour obtenir €/kWh).",
+                "La TVA (6 % pour les ménages) s'applique sur la somme de tous les éléments variables et fixes.",
+                "Les frais fixes annuels (ex. frais fournisseur ou GRD) s'ajoutent en dehors de ces composantes proportionnelles.",
+            ],
+        ),
+        "community_grid": CostGuideSection(
+            key="community_grid",
+            title="Communauté énergétique (réseau public)",
+            subtitle="Les flux passent par le réseau classique : les tarifs régulés restent dus.",
+            components=community_components,
+            notes=[
+                "Le prix interne et les frais de communauté peuvent être ajustés pour équilibrer la répartition des gains.",
+                "Les tarifs régulés (DSO, TSO, taxes) ne peuvent pas être optimisés : ils servent de borne basse pour le prix final.",
+            ],
+        ),
+        "community_same_site": CostGuideSection(
+            key="community_same_site",
+            title="Communauté site unique / même bâtiment",
+            subtitle="Exemple de réduction des tarifs réseau lorsque la communauté partage une infrastructure interne.",
+            components=same_site_components,
+            notes=[
+                "Les réductions réseau dépendent du gestionnaire et du type d'installation : à confirmer pour chaque dossier.",
+                "Les taxes et surcharges restent dues : elles fixent le minimum réglementaire.",
+            ],
+        ),
+    }
+
+    return guide
+
+
 def build_member_inputs(members: Iterable) -> List[MemberCostInput]:
     inputs: List[MemberCostInput] = []
     for member in members:
@@ -161,6 +414,9 @@ def build_scenario_parameters(scenario, member_constraints: Dict[int, ShareConst
         community_fixed_fee_total_eur=scenario.community_fixed_fee_total_eur,
         community_per_member_fee_eur=scenario.community_per_member_fee_eur,
         fee_allocation=scenario.fee_allocation,
+        community_variable_fee_eur_per_kwh=scenario.community_variable_fee_eur_per_kwh,
+        community_injection_price_eur_per_kwh=scenario.community_injection_price_eur_per_kwh,
+        tariff_context=scenario.tariff_context,
         member_constraints=member_constraints,
     )
 
@@ -234,13 +490,30 @@ def evaluate_scenario(
                 fixed_fee_per_member if params.fee_allocation == FEE_ALLOCATION_ALL_MEMBERS else 0.0
             )
 
+        per_member_fee_component = (
+            params.community_per_member_fee_eur if share_value > 1e-6 else 0.0
+        )
+        community_energy_cost = community_kwh * price
+        community_variable_cost = (
+            community_kwh * params.community_variable_fee_eur_per_kwh
+        )
+        supplier_energy_cost = supplier_kwh * member.current_price_eur_per_kwh
+        fixed_fee_component = member.current_fixed_fee_eur
+        injection_price = (
+            params.community_injection_price_eur_per_kwh
+            if params.community_injection_price_eur_per_kwh is not None
+            else member.injection_price_eur_per_kwh
+        )
+        injection_revenue = member.injection_kwh * injection_price
+
         community_cost = (
-            community_kwh * price
-            + supplier_kwh * member.current_price_eur_per_kwh
-            + member.current_fixed_fee_eur
+            community_energy_cost
+            + community_variable_cost
+            + supplier_energy_cost
+            + fixed_fee_component
             + community_fee_component
-            + (params.community_per_member_fee_eur if share_value > 1e-6 else 0.0)
-            - (member.injection_kwh * member.injection_price_eur_per_kwh)
+            + per_member_fee_component
+            - injection_revenue
         )
 
         cost_per_kwh_now = 0.0 if member.consumption_kwh <= 0 else current_cost / member.consumption_kwh
@@ -258,6 +531,14 @@ def evaluate_scenario(
                 delta_cost=community_cost - current_cost,
                 cost_per_kwh_now=cost_per_kwh_now,
                 cost_per_kwh_community=cost_per_kwh_comm,
+                community_energy_cost=community_energy_cost,
+                community_variable_cost=community_variable_cost,
+                supplier_energy_cost=supplier_energy_cost,
+                shared_fee_component=community_fee_component,
+                per_member_fee_component=per_member_fee_component,
+                fixed_fee_component=fixed_fee_component,
+                injection_revenue=injection_revenue,
+                current_energy_cost=member.consumption_kwh * member.current_price_eur_per_kwh,
                 utility=member.utility,
             )
         )

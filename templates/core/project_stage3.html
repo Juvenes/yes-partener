@@ -53,6 +53,17 @@
     .constraint-list { display: grid; gap: 1rem; }
     .constraint-row { display: grid; grid-template-columns: minmax(0, 220px) 1fr; gap: 1.25rem; align-items: start; background: #f5f8ff; padding: 1rem 1.25rem; border-radius: 12px; }
     .error { color: #c62828; }
+    .guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin-top: 1.5rem; }
+    .guide-card { background: #fff; border-radius: 14px; padding: 1.25rem; box-shadow: 0 8px 20px rgba(30, 41, 59, 0.08); }
+    .guide-card h3 { margin-top: 0; margin-bottom: .35rem; }
+    .component-table { width: 100%; border-collapse: collapse; margin-top: .85rem; font-size: .9rem; }
+    .component-table th, .component-table td { padding: .45rem .35rem; border-bottom: 1px solid #e3e7f1; text-align: left; }
+    .component-table th { font-weight: 600; color: #3a4a6b; }
+    .component-table tbody tr:last-child td { border-bottom: none; }
+    .tag-fixed { background: #eceff1; color: #37474f; padding: .15rem .45rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+    .tag-adjustable { background: #e8f5e9; color: #1b5e20; padding: .15rem .45rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+    .breakdown-list { list-style: none; margin: 0; padding: 0; font-size: .85rem; color: #37474f; }
+    .breakdown-list li { margin-bottom: .2rem; }
     @media (max-width: 720px) {
       .form-grid { grid-template-columns: 1fr; }
       .constraint-row { grid-template-columns: 1fr; }
@@ -82,6 +93,65 @@
     </ul>
   {% endif %}
 
+  <section class="card">
+    <h2>Comprendre la facture électrique et le Stage 3</h2>
+    <p class="muted" style="margin-bottom: 1rem;">
+      Le Stage 3 décortique les composantes d'une facture d'électricité belge (référence Wallonie 2025)
+      pour comparer la situation actuelle des membres et différents scénarios de communauté énergétique.
+      Les montants ci-dessous sont fournis à titre indicatif : adaptez les champs lors de la création d'un
+      scénario afin de refléter vos hypothèses ou données contractuelles.
+    </p>
+    <div class="guide-grid">
+      {% for section in guide_sections %}
+        <div class="guide-card">
+          <h3>{{ section.title }}</h3>
+          <p class="muted">{{ section.subtitle }}</p>
+          <table class="component-table">
+            <thead>
+              <tr>
+                <th>Composante</th>
+                <th>€/MWh</th>
+                <th>€/kWh</th>
+                <th>Nature</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for component in section.components %}
+                <tr>
+                  <td>{{ component.label }}</td>
+                  <td>{{ component.value_eur_per_mwh|floatformat:2 }}</td>
+                  <td>{{ component.value_eur_per_kwh|floatformat:4 }}</td>
+                  <td>
+                    {% if component.adjustable %}
+                      <span class="tag-adjustable">Ajustable</span>
+                    {% else %}
+                      <span class="tag-fixed">Régulé</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Total (hors TVA)</th>
+                <th>{{ section.total_eur_per_mwh|floatformat:2 }}</th>
+                <th>{{ section.total_eur_per_kwh|floatformat:4 }}</th>
+                <th></th>
+              </tr>
+            </tfoot>
+          </table>
+          {% if section.notes %}
+            <ul class="muted" style="margin-top: .75rem; padding-left: 1.1rem;">
+              {% for note in section.notes %}
+                <li>{{ note }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
   <section class="summary-grid">
     <div class="card">
       <h3>Consommation cumulée</h3>
@@ -102,6 +172,7 @@
 
   <section>
     <h2>Données économiques des membres</h2>
+    <p class="muted">Renseignez pour chaque membre les coûts constatés aujourd'hui : prix fournisseur, frais fixes, volumes injectés et tarif de rachat. Ces valeurs servent de référence pour calculer les économies potentielles.</p>
     <div class="member-grid">
       {% for member_card in member_cards %}
         <div class="card member-card">
@@ -135,6 +206,7 @@
 
   <section>
     <h2>Créer un scénario communautaire</h2>
+    <p class="muted">Complétez les paramètres ci-dessous pour simuler un cadre communautaire. Le prix communautaire et les frais peuvent être optimisés automatiquement si vous fournissez un intervalle min/max.</p>
     <form method="post" action="{% url 'stage3_scenario_create' project.id %}" class="card">
       {% csrf_token %}
       <div class="form-grid scenario-form">
@@ -169,8 +241,22 @@
             {% if card.scenario.community_per_member_fee_eur %}
               <span class="pill">Frais individuels {{ card.scenario.community_per_member_fee_eur|floatformat:2 }} €</span>
             {% endif %}
+            {% if card.params.community_variable_fee_eur_per_kwh %}
+              <span class="pill">Frais variable {{ card.params.community_variable_fee_eur_per_kwh|floatformat:3 }} €/kWh</span>
+            {% endif %}
+            {% if card.params.community_injection_price_eur_per_kwh %}
+              <span class="pill">Rachat interne {{ card.params.community_injection_price_eur_per_kwh|floatformat:3 }} €/kWh</span>
+            {% endif %}
+            {% if card.guide %}
+              <span class="pill">{{ card.guide.title }}</span>
+            {% else %}
+              <span class="pill">{{ card.scenario.get_tariff_context_display }}</span>
+            {% endif %}
             <span class="pill">Répartition {{ card.scenario.get_fee_allocation_display }}</span>
           </div>
+          {% if card.guide %}
+            <p class="muted" style="margin-top:.35rem;">Cadre de référence : {{ card.guide.subtitle }} — total indicatif {{ card.guide.total_eur_per_kwh|floatformat:4 }} €/kWh (hors TVA).</p>
+          {% endif %}
         </div>
         <div class="scenario-actions">
           <form method="post" action="{% url 'stage3_scenario_delete' project.id card.scenario.id %}" onsubmit="return confirm('Supprimer ce scénario ?');">
@@ -239,6 +325,7 @@
                 <th>Coût actuel</th>
                 <th>Coût scénario</th>
                 <th>Écart</th>
+                <th>Décomposition communautaire</th>
               </tr>
             </thead>
             <tbody>
@@ -251,6 +338,25 @@
                   <td>{{ breakdown.current_cost|floatformat:2 }} €</td>
                   <td>{{ breakdown.community_cost|floatformat:2 }} €</td>
                   <td>{% if breakdown.delta_cost <= 0 %}<span style="color:#2e7d32;">{{ breakdown.delta_cost|floatformat:2 }} €</span>{% else %}<span class="error">+{{ breakdown.delta_cost|floatformat:2 }} €</span>{% endif %}</td>
+                  <td>
+                    <ul class="breakdown-list">
+                      <li>Énergie communauté : {{ breakdown.community_energy_cost|floatformat:2 }} €</li>
+                      {% if breakdown.community_variable_cost %}
+                        <li>Frais variable : {{ breakdown.community_variable_cost|floatformat:2 }} €</li>
+                      {% endif %}
+                      <li>Énergie fournisseur : {{ breakdown.supplier_energy_cost|floatformat:2 }} €</li>
+                      <li>Frais fixes actuels : {{ breakdown.fixed_fee_component|floatformat:2 }} €</li>
+                      {% if breakdown.shared_fee_component %}
+                        <li>Part frais partagés : {{ breakdown.shared_fee_component|floatformat:2 }} €</li>
+                      {% endif %}
+                      {% if breakdown.per_member_fee_component %}
+                        <li>Frais individuels communauté : {{ breakdown.per_member_fee_component|floatformat:2 }} €</li>
+                      {% endif %}
+                      {% if breakdown.injection_revenue %}
+                        <li>Revenu injection : -{{ breakdown.injection_revenue|floatformat:2 }} €</li>
+                      {% endif %}
+                    </ul>
+                  </td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -263,6 +369,7 @@
                 <th>{{ card.evaluation.total_current_cost|floatformat:2 }} €</th>
                 <th>{{ card.evaluation.total_community_cost|floatformat:2 }} €</th>
                 <th>{{ card.evaluation.savings|floatformat:2 }} €</th>
+                <th></th>
               </tr>
             </tfoot>
           </table>

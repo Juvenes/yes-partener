@@ -30,6 +30,7 @@ from .stage3 import (
     optimize_average_cost,
     optimize_member_cost,
     optimize_total_cost,
+    reference_cost_guide,
 )
 from .timeseries import (
     TimeseriesError,
@@ -613,7 +614,17 @@ def project_stage3(request, project_id):
         for member_input in member_inputs
     ]
 
-    scenario_form = StageThreeScenarioForm(prefix="scenario-new")
+    guide = reference_cost_guide()
+    guide_sections = [
+        guide[key]
+        for key in ["traditional", "community_grid", "community_same_site"]
+        if key in guide
+    ]
+
+    scenario_form = StageThreeScenarioForm(
+        prefix="scenario-new",
+        initial=StageThreeScenarioForm.default_initial(),
+    )
     scenarios = (
         project.stage3_scenarios.all()
         .prefetch_related("member_settings__member")
@@ -709,6 +720,7 @@ def project_stage3(request, project_id):
                 "evaluation_error": evaluation_error,
                 "optimizations": optimizations,
                 "params": params,
+                "guide": guide.get(scenario.tariff_context),
             }
         )
 
@@ -730,6 +742,8 @@ def project_stage3(request, project_id):
             "total_current_cost": total_current_cost,
             "total_consumption": total_consumption,
             "avg_current_cost": avg_current_cost,
+            "guide_sections": guide_sections,
+            "guide_lookup": guide,
         },
     )
 
