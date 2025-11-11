@@ -7,7 +7,6 @@ from .models import (
     GlobalParameter,
     StageTwoScenario,
     StageThreeScenario,
-    StageThreeScenarioMember,
 )
 
 class ProjectForm(forms.ModelForm):
@@ -178,12 +177,9 @@ class StageThreeScenarioForm(forms.ModelForm):
     @classmethod
     def default_initial(cls):
         return {
-            "community_price_eur_per_kwh": 0.07,
-            "price_min_eur_per_kwh": 0.05,
-            "price_max_eur_per_kwh": 0.09,
-            "price_step_eur_per_kwh": 0.005,
-            "default_share": 0.8,
-            "coverage_cap": 1.0,
+            "community_price_eur_per_kwh": "",
+            "price_min_eur_per_kwh": "",
+            "price_max_eur_per_kwh": "",
             "community_variable_fee_eur_per_kwh": 0.009,
             "community_fixed_fee_total_eur": 75.0,
             "community_per_member_fee_eur": 100.0,
@@ -198,14 +194,10 @@ class StageThreeScenarioForm(forms.ModelForm):
             "community_price_eur_per_kwh",
             "price_min_eur_per_kwh",
             "price_max_eur_per_kwh",
-            "price_step_eur_per_kwh",
-            "default_share",
-            "coverage_cap",
             "community_fixed_fee_total_eur",
             "community_per_member_fee_eur",
             "community_variable_fee_eur_per_kwh",
             "community_injection_price_eur_per_kwh",
-            "fee_allocation",
             "tariff_context",
             "notes",
         ]
@@ -213,9 +205,6 @@ class StageThreeScenarioForm(forms.ModelForm):
             "community_price_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
             "price_min_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
             "price_max_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
-            "price_step_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0.0001"}),
-            "default_share": forms.NumberInput(attrs={"step": "0.05", "min": "0", "max": "1"}),
-            "coverage_cap": forms.NumberInput(attrs={"step": "0.05", "min": "0", "max": "1"}),
             "community_fixed_fee_total_eur": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "community_per_member_fee_eur": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "community_variable_fee_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
@@ -229,31 +218,21 @@ class StageThreeScenarioForm(forms.ModelForm):
         price_min = cleaned.get("price_min_eur_per_kwh")
         price_max = cleaned.get("price_max_eur_per_kwh")
 
-        if community_price is None and (price_min is None or price_max is None):
+        if price_min is not None and price_max is not None and price_min > price_max:
             raise forms.ValidationError(
-                "Définissez soit un prix communautaire fixe, soit une borne min et max pour l'optimisation."
+                "La borne minimum doit être inférieure ou égale à la borne maximum."
             )
 
-        if price_min is not None and price_max is not None and price_min > price_max:
-            raise forms.ValidationError("La borne minimum doit être inférieure ou égale à la borne maximum.")
+        if community_price is not None:
+            if price_min is not None and community_price < price_min:
+                self.add_error(
+                    "community_price_eur_per_kwh",
+                    "Le prix communautaire doit être supérieur ou égal à la borne minimum.",
+                )
+            if price_max is not None and community_price > price_max:
+                self.add_error(
+                    "community_price_eur_per_kwh",
+                    "Le prix communautaire doit être inférieur ou égal à la borne maximum.",
+                )
 
-        return cleaned
-
-
-class StageThreeScenarioMemberForm(forms.ModelForm):
-    class Meta:
-        model = StageThreeScenarioMember
-        fields = ["share_override", "min_share", "max_share"]
-        widgets = {
-            "share_override": forms.NumberInput(attrs={"step": "0.05", "min": "0", "max": "1"}),
-            "min_share": forms.NumberInput(attrs={"step": "0.05", "min": "0", "max": "1"}),
-            "max_share": forms.NumberInput(attrs={"step": "0.05", "min": "0", "max": "1"}),
-        }
-
-    def clean(self):
-        cleaned = super().clean()
-        min_share = cleaned.get("min_share")
-        max_share = cleaned.get("max_share")
-        if min_share is not None and max_share is not None and min_share > max_share:
-            raise forms.ValidationError("La borne minimale doit être inférieure ou égale à la borne maximale.")
         return cleaned

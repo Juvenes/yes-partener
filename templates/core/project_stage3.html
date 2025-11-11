@@ -230,11 +230,13 @@
           <h2>{{ card.scenario.name }}</h2>
           <div class="muted" style="margin-top: .35rem;">
             {% if card.params.community_price_eur_per_kwh is not None %}
-              <span class="pill">Prix {{ card.params.community_price_eur_per_kwh|floatformat:3 }} €/kWh</span>
+              <span class="pill">Prix fixé {{ card.params.community_price_eur_per_kwh|floatformat:3 }} €/kWh</span>
+            {% elif card.envelope_defined %}
+              <span class="pill">Plage naturelle {{ card.price_envelope.derived_min|floatformat:3 }} → {{ card.price_envelope.derived_max|floatformat:3 }} €/kWh</span>
+              <span class="pill">Plage testée {{ card.price_envelope.effective_min|floatformat:3 }} → {{ card.price_envelope.effective_max|floatformat:3 }} €/kWh</span>
             {% else %}
-              <span class="pill">Prix exploré {{ card.params.price_min_eur_per_kwh|floatformat:3 }} → {{ card.params.price_max_eur_per_kwh|floatformat:3 }} €/kWh</span>
+              <span class="pill">Plage de prix indisponible</span>
             {% endif %}
-            <span class="pill">Couverture max {{ card.params.coverage_cap|floatformat:2 }}</span>
             {% if card.scenario.community_fixed_fee_total_eur %}
               <span class="pill">Frais partagés {{ card.scenario.community_fixed_fee_total_eur|floatformat:2 }} €</span>
             {% endif %}
@@ -252,13 +254,13 @@
             {% else %}
               <span class="pill">{{ card.scenario.get_tariff_context_display }}</span>
             {% endif %}
-            <span class="pill">Répartition {{ card.scenario.get_fee_allocation_display }}</span>
           </div>
           {% if card.guide %}
             <p class="muted" style="margin-top:.35rem;">Cadre de référence : {{ card.guide.subtitle }} — total indicatif {{ card.guide.total_eur_per_kwh|floatformat:4 }} €/kWh (hors TVA).</p>
           {% endif %}
         </div>
         <div class="scenario-actions">
+          <a class="btn-secondary btn-small" href="{% url 'stage3_scenario_trace' project.id card.scenario.id %}">Exporter la trace CSV</a>
           <form method="post" action="{% url 'stage3_scenario_delete' project.id card.scenario.id %}" onsubmit="return confirm('Supprimer ce scénario ?');">
             {% csrf_token %}
             <button class="btn-danger btn-small" type="submit">Supprimer</button>
@@ -285,33 +287,6 @@
       </details>
 
       <div>
-        <h3>Contraintes par membre</h3>
-        <div class="constraint-list">
-          {% for member, form in card.member_forms %}
-            <div class="constraint-row">
-              <div>
-                <strong>{{ member.name }}</strong>
-                <p class="muted">Utilité : {{ member.utility|default:"—" }}</p>
-              </div>
-              <form method="post" action="{% url 'stage3_scenario_member_update' project.id card.scenario.id member.id %}" class="constraint-form">
-                {% csrf_token %}
-                <div class="constraint-grid">
-                  {% for field in form %}
-                    <label>
-                      {{ field.label }}
-                      {{ field }}
-                      {% if field.errors %}<span class="error">{{ field.errors|striptags }}</span>{% endif %}
-                    </label>
-                  {% endfor %}
-                  <button class="btn-small" type="submit">Enregistrer</button>
-                </div>
-              </form>
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div>
         <h3>Résultat de base</h3>
         {% if card.evaluation %}
           <p class="muted">Prix utilisé : {{ card.evaluation.price_eur_per_kwh|floatformat:3 }} €/kWh.</p>
@@ -319,12 +294,10 @@
             <thead>
               <tr>
                 <th>Membre</th>
-                <th>Part communautaire</th>
-                <th>kWh communauté</th>
-                <th>kWh fournisseur</th>
+                <th>Consommation (kWh)</th>
                 <th>Coût actuel</th>
-                <th>Coût scénario</th>
-                <th>Écart</th>
+                <th>Coût communauté</th>
+                <th>Économie</th>
                 <th>Décomposition communautaire</th>
               </tr>
             </thead>
@@ -332,19 +305,22 @@
               {% for breakdown in card.evaluation.member_breakdowns %}
                 <tr>
                   <td>{{ breakdown.name }}</td>
-                  <td>{{ breakdown.share|floatformat:2 }}</td>
                   <td>{{ breakdown.community_kwh|floatformat:0 }}</td>
-                  <td>{{ breakdown.supplier_kwh|floatformat:0 }}</td>
-                  <td>{{ breakdown.current_cost|floatformat:2 }} €</td>
-                  <td>{{ breakdown.community_cost|floatformat:2 }} €</td>
-                  <td>{% if breakdown.delta_cost <= 0 %}<span style="color:#2e7d32;">{{ breakdown.delta_cost|floatformat:2 }} €</span>{% else %}<span class="error">+{{ breakdown.delta_cost|floatformat:2 }} €</span>{% endif %}</td>
+                  <td>{{ breakdown.current_cost|floatformat:2 }} € ({{ breakdown.cost_per_kwh_now|floatformat:4 }} €/kWh)</td>
+                  <td>{{ breakdown.community_cost|floatformat:2 }} € ({{ breakdown.cost_per_kwh_community|floatformat:4 }} €/kWh)</td>
+                  <td>
+                    {% if breakdown.delta_cost >= 0 %}
+                      <span style="color:#2e7d32;">+{{ breakdown.delta_cost|floatformat:2 }} €</span>
+                    {% else %}
+                      <span class="error">{{ breakdown.delta_cost|floatformat:2 }} €</span>
+                    {% endif %}
+                  </td>
                   <td>
                     <ul class="breakdown-list">
                       <li>Énergie communauté : {{ breakdown.community_energy_cost|floatformat:2 }} €</li>
                       {% if breakdown.community_variable_cost %}
                         <li>Frais variable : {{ breakdown.community_variable_cost|floatformat:2 }} €</li>
                       {% endif %}
-                      <li>Énergie fournisseur : {{ breakdown.supplier_energy_cost|floatformat:2 }} €</li>
                       <li>Frais fixes actuels : {{ breakdown.fixed_fee_component|floatformat:2 }} €</li>
                       {% if breakdown.shared_fee_component %}
                         <li>Part frais partagés : {{ breakdown.shared_fee_component|floatformat:2 }} €</li>
@@ -363,9 +339,7 @@
             <tfoot>
               <tr>
                 <th>Total</th>
-                <th></th>
                 <th>{{ card.evaluation.total_community_consumption_kwh|floatformat:0 }}</th>
-                <th>{{ card.evaluation.total_supplier_consumption_kwh|floatformat:0 }}</th>
                 <th>{{ card.evaluation.total_current_cost|floatformat:2 }} €</th>
                 <th>{{ card.evaluation.total_community_cost|floatformat:2 }} €</th>
                 <th>{{ card.evaluation.savings|floatformat:2 }} €</th>
@@ -381,29 +355,27 @@
       <div>
         <h3>Optimisations</h3>
         <div class="optimization-list">
-          {% if card.optimizations.total_cost %}
-            {% with opt=card.optimizations.total_cost %}
+          {% if card.optimizations.group %}
+            {% with opt=card.optimizations.group %}
               <details open>
-                <summary>Minimiser le coût total (prix {{ opt.evaluation.price_eur_per_kwh|floatformat:3 }} €/kWh)</summary>
-                <p class="muted">Coût global : {{ opt.evaluation.total_community_cost|floatformat:2 }} € (gain {{ opt.evaluation.savings|floatformat:2 }} € par rapport à l'actuel).</p>
+                <summary>Gain collectif maximal (prix {{ opt.evaluation.price_eur_per_kwh|floatformat:3 }} €/kWh)</summary>
+                <p class="muted">Économie totale : {{ opt.evaluation.savings|floatformat:2 }} €.</p>
                 <table>
                   <thead>
                     <tr>
                       <th>Membre</th>
-                      <th>Part communautaire</th>
-                      <th>kWh communauté</th>
-                      <th>Coût scénario</th>
-                      <th>Écart</th>
+                      <th>Consommation (kWh)</th>
+                      <th>Coût communauté</th>
+                      <th>Économie</th>
                     </tr>
                   </thead>
                   <tbody>
                     {% for breakdown in opt.evaluation.member_breakdowns %}
                       <tr>
                         <td>{{ breakdown.name }}</td>
-                        <td>{{ breakdown.share|floatformat:2 }}</td>
                         <td>{{ breakdown.community_kwh|floatformat:0 }}</td>
                         <td>{{ breakdown.community_cost|floatformat:2 }} €</td>
-                        <td>{% if breakdown.delta_cost <= 0 %}<span style="color:#2e7d32;">{{ breakdown.delta_cost|floatformat:2 }} €</span>{% else %}<span class="error">+{{ breakdown.delta_cost|floatformat:2 }} €</span>{% endif %}</td>
+                        <td>{% if breakdown.delta_cost >= 0 %}<span style="color:#2e7d32;">+{{ breakdown.delta_cost|floatformat:2 }} €</span>{% else %}<span class="error">{{ breakdown.delta_cost|floatformat:2 }} €</span>{% endif %}</td>
                       </tr>
                     {% endfor %}
                   </tbody>
@@ -411,48 +383,39 @@
               </details>
             {% endwith %}
           {% else %}
-            <p class="muted">Optimisation du coût total indisponible (prix manquant).</p>
+            <p class="muted">Optimisation collective indisponible (données insuffisantes).</p>
           {% endif %}
 
-          {% if card.optimizations.average_cost %}
-            {% with opt=card.optimizations.average_cost %}
+          {% if card.optimizations.everyone %}
+            {% with opt=card.optimizations.everyone %}
               <details>
-                <summary>Minimiser le coût moyen (prix {{ opt.evaluation.price_eur_per_kwh|floatformat:3 }} €/kWh)</summary>
-                <p class="muted">Coût moyen : {{ opt.evaluation.average_cost_per_kwh|floatformat:4 }} €/kWh.</p>
+                <summary>Gain pour chaque membre (prix {{ opt.evaluation.price_eur_per_kwh|floatformat:3 }} €/kWh)</summary>
+                <p class="muted">Économie totale : {{ opt.evaluation.savings|floatformat:2 }} € — aucun membre ne paie plus qu'actuellement.</p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Membre</th>
+                      <th>Consommation (kWh)</th>
+                      <th>Coût communauté</th>
+                      <th>Économie</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for breakdown in opt.evaluation.member_breakdowns %}
+                      <tr>
+                        <td>{{ breakdown.name }}</td>
+                        <td>{{ breakdown.community_kwh|floatformat:0 }}</td>
+                        <td>{{ breakdown.community_cost|floatformat:2 }} €</td>
+                        <td>{% if breakdown.delta_cost >= 0 %}<span style="color:#2e7d32;">+{{ breakdown.delta_cost|floatformat:2 }} €</span>{% else %}<span class="error">{{ breakdown.delta_cost|floatformat:2 }} €</span>{% endif %}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
               </details>
             {% endwith %}
+          {% else %}
+            <p class="muted">Aucune configuration ne garantit un gain pour tous les membres.</p>
           {% endif %}
-
-          <details>
-            <summary>Optimisation individuelle</summary>
-            <table>
-              <thead>
-                <tr>
-                  <th>Membre</th>
-                  <th>Part recommandée</th>
-                  <th>Coût scénario</th>
-                  <th>Économie</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for item in card.optimizations.member_opts %}
-                  {% if item.result and item.breakdown %}
-                    <tr>
-                      <td>{{ item.member.name }}</td>
-                      <td>{{ item.breakdown.share|floatformat:2 }}</td>
-                      <td>{{ item.breakdown.community_cost|floatformat:2 }} €</td>
-                      <td>{% with delta=item.breakdown.delta_cost %}{% if delta <= 0 %}<span style="color:#2e7d32;">{{ delta|floatformat:2 }} €</span>{% else %}<span class="error">+{{ delta|floatformat:2 }} €</span>{% endif %}{% endwith %}</td>
-                    </tr>
-                  {% else %}
-                    <tr>
-                      <td>{{ item.member.name }}</td>
-                      <td colspan="3" class="muted">Pas de configuration optimale (prix manquant).</td>
-                    </tr>
-                  {% endif %}
-                {% endfor %}
-              </tbody>
-            </table>
-          </details>
         </div>
       </div>
     </section>

@@ -7,7 +7,6 @@ from .models import (
     GlobalParameter,
     StageTwoScenario,
     StageThreeScenario,
-    StageThreeScenarioMember,
 )
 
 class MemberProfileInline(admin.TabularInline):
@@ -44,11 +43,6 @@ class StageTwoScenarioAdmin(admin.ModelAdmin):
     search_fields = ("name", "project__name")
 
 
-class StageThreeScenarioMemberInline(admin.TabularInline):
-    model = StageThreeScenarioMember
-    extra = 0
-
-
 @admin.register(StageThreeScenario)
 class StageThreeScenarioAdmin(admin.ModelAdmin):
     list_display = (
@@ -58,6 +52,5 @@ class StageThreeScenarioAdmin(admin.ModelAdmin):
         "price_min_eur_per_kwh",
         "price_max_eur_per_kwh",
     )
-    list_filter = ("project", "fee_allocation")
+    list_filter = ("project",)
     search_fields = ("name", "project__name")
-    inlines = [StageThreeScenarioMemberInline]

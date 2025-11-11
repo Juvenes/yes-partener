@@ -39,9 +39,9 @@ urlpatterns = [
         name="stage3_scenario_delete",
     ),
     path(
-        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/members/<int:member_id>/",
-        v.stage3_scenario_member_update,
-        name="stage3_scenario_member_update",
+        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/trace/",
+        v.stage3_scenario_trace,
+        name="stage3_scenario_trace",
     ),
 
     # New dedicated pages

@@ -11,7 +11,6 @@ from .models import (
     GlobalParameter,
     StageTwoScenario,
     StageThreeScenario,
-    StageThreeScenarioMember,
 )
 from .forms import (
     ProjectForm,
@@ -22,7 +21,6 @@ from .forms import (
     StageTwoScenarioForm,
     StageThreeMemberCostForm,
     StageThreeScenarioForm,
-    StageThreeScenarioMemberForm,
 )
 from .stage2 import (
     evaluate_sharing as evaluate_stage_two,
@@ -30,13 +28,14 @@ from .stage2 import (
     load_project_timeseries as load_stage_two_timeseries,
 )
 from .stage3 import (
-    ShareConstraint,
     build_member_inputs,
     build_scenario_parameters,
+    derive_price_envelope,
     evaluate_scenario,
-    optimize_average_cost,
-    optimize_member_cost,
-    optimize_total_cost,
+    generate_trace_rows,
+    optimize_group_benefit,
+    optimize_everyone_wins,
+    price_candidates,
     reference_cost_guide,
 )
 from .timeseries import (
@@ -851,89 +850,27 @@ def project_stage3(request, project_id):
         prefix="scenario-new",
         initial=StageThreeScenarioForm.default_initial(),
     )
-    scenarios = (
-        project.stage3_scenarios.all()
-        .prefetch_related("member_settings__member")
-        .order_by("name")
-    )
+    scenarios = project.stage3_scenarios.all().order_by("name")
 
     scenario_cards = []
     for scenario in scenarios:
-        settings_by_member = {s.member_id: s for s in scenario.member_settings.all()}
-        constraints: Dict[int, ShareConstraint] = {}
-        for member in members:
-            setting = settings_by_member.get(member.id)
-            if setting:
-                min_share = setting.min_share if setting.min_share is not None else 0.0
-                max_share = setting.max_share if setting.max_share is not None else scenario.coverage_cap
-                max_share = max(min_share, min(max_share, scenario.coverage_cap))
-                override = setting.share_override
-                if override is not None:
-                    override = max(min_share, min(max_share, override))
-                constraints[member.id] = ShareConstraint(
-                    min_share=max(0.0, min_share),
-                    max_share=max_share,
-                    override=override,
-                )
-            else:
-                constraints[member.id] = ShareConstraint(
-                    min_share=0.0,
-                    max_share=scenario.coverage_cap,
-                    override=None,
-                )
+        params = build_scenario_parameters(scenario)
+        envelope = derive_price_envelope(member_inputs, params)
 
-        params = build_scenario_parameters(scenario, constraints)
         evaluation = None
         evaluation_error = None
         try:
-            evaluation = evaluate_scenario(member_inputs, params)
+            base_price = params.community_price_eur_per_kwh
+            if base_price is not None:
+                evaluation = evaluate_scenario(member_inputs, params, price=base_price)
         except ValueError as exc:
             evaluation_error = str(exc)
 
-        optimizations = {
-            "total_cost": None,
-            "average_cost": None,
-            "member_opts": [],
-        }
-        if evaluation is not None:
-            optimizations["total_cost"] = optimize_total_cost(member_inputs, params)
-            optimizations["average_cost"] = optimize_average_cost(member_inputs, params)
-            member_results = []
-            for member in members:
-                opt_result = optimize_member_cost(member_inputs, params, member.id)
-                breakdown = None
-                if opt_result is not None:
-                    breakdown = next(
-                        (
-                            b
-                            for b in opt_result.evaluation.member_breakdowns
-                            if b.member_id == member.id
-                        ),
-                        None,
-                    )
-                member_results.append(
-                    {
-                        "member": member,
-                        "result": opt_result,
-                        "breakdown": breakdown,
-                    }
-                )
-            optimizations["member_opts"] = member_results
+        group_optimization = optimize_group_benefit(member_inputs, params, envelope)
+        everyone_optimization = optimize_everyone_wins(member_inputs, params, envelope)
 
-        member_setting_forms = []
-        for member in members:
-            instance = settings_by_member.get(member.id)
-            if not instance:
-                instance = StageThreeScenarioMember(scenario=scenario, member=member)
-            member_setting_forms.append(
-                (
-                    member,
-                    StageThreeScenarioMemberForm(
-                        instance=instance,
-                        prefix=f"scenario-{scenario.id}-member-{member.id}",
-                    ),
-                )
-            )
+        if evaluation is None and group_optimization is not None:
+            evaluation = group_optimization.evaluation
 
         scenario_cards.append(
             {
@@ -941,10 +878,14 @@ def project_stage3(request, project_id):
                 "form": StageThreeScenarioForm(
                     instance=scenario, prefix=f"scenario-{scenario.id}"
                 ),
-                "member_forms": member_setting_forms,
                 "evaluation": evaluation,
                 "evaluation_error": evaluation_error,
-                "optimizations": optimizations,
+                "optimizations": {
+                    "group": group_optimization,
+                    "everyone": everyone_optimization,
+                },
+                "price_envelope": envelope,
+                "envelope_defined": envelope.is_defined(),
                 "params": params,
                 "guide": guide.get(scenario.tariff_context),
             }
@@ -1027,46 +968,42 @@ def stage3_scenario_delete(request, project_id, scenario_id):
     return redirect("project_stage3", project_id=project.id)
 
 
-@require_http_methods(["POST"])
-def stage3_scenario_member_update(request, project_id, scenario_id, member_id):
+@require_http_methods(["GET"])
+def stage3_scenario_trace(request, project_id, scenario_id):
     project = get_object_or_404(Project, pk=project_id)
     scenario = get_object_or_404(StageThreeScenario, pk=scenario_id, project=project)
-    member = get_object_or_404(Member, pk=member_id, project=project)
-    instance, _ = StageThreeScenarioMember.objects.get_or_create(
-        scenario=scenario, member=member
-    )
-    form = StageThreeScenarioMemberForm(
-        request.POST,
-        instance=instance,
-        prefix=f"scenario-{scenario.id}-member-{member.id}",
-    )
-    if form.is_valid():
-        cleaned = form.cleaned_data
-        min_share = cleaned.get("min_share")
-        max_share = cleaned.get("max_share")
-        share_override = cleaned.get("share_override")
+    members = list(project.members.all().order_by("name"))
+    inputs = build_member_inputs(members)
+    params = build_scenario_parameters(scenario)
+    envelope = derive_price_envelope(inputs, params)
 
-        if max_share is not None:
-            max_share = min(max_share, scenario.coverage_cap)
-        if min_share is not None:
-            min_share = max(0.0, min_share)
-        if min_share is not None and max_share is not None and min_share > max_share:
-            min_share = max_share
-        if share_override is not None:
-            lower = min_share if min_share is not None else 0.0
-            upper = max_share if max_share is not None else scenario.coverage_cap
-            share_override = max(lower, min(upper, share_override))
-
-        if share_override is None and min_share is None and max_share is None:
-            if instance.pk:
-                instance.delete()
-                messages.success(request, f"Contraintes réinitialisées pour {member.name}.")
-        else:
-            instance.share_override = share_override
-            instance.min_share = min_share
-            instance.max_share = max_share
-            instance.save()
-            messages.success(request, f"Contraintes sauvegardées pour {member.name}.")
+    if params.community_price_eur_per_kwh is not None:
+        prices = [params.community_price_eur_per_kwh]
     else:
-        messages.error(request, f"Impossible d'enregistrer : {form.errors.as_json()}")
-    return redirect("project_stage3", project_id=project.id)
+        prices = price_candidates(envelope)
+
+    if not prices:
+        messages.warning(
+            request,
+            "Aucun prix n'a pu être évalué pour générer la trace Stage 3.",
+        )
+        return redirect("project_stage3", project_id=project.id)
+
+    rows = generate_trace_rows(inputs, params, prices)
+    if not rows:
+        messages.warning(request, "Aucune donnée disponible pour l'export Stage 3.")
+        return redirect("project_stage3", project_id=project.id)
+
+    response = HttpResponse(content_type="text/csv")
+    filename = f"stage3_{slugify(project.name)}_{slugify(scenario.name)}.csv"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    fieldnames = list(rows[0].keys())
+    writer = csv.DictWriter(response, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+
+    return response
+
+

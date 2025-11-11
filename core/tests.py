@@ -6,15 +6,17 @@ from django.core.files.base import ContentFile
 from django.test import TestCase
 from django.urls import reverse
 
-from .forms import StageTwoScenarioForm, StageThreeScenarioForm, StageThreeScenarioMemberForm
+from .forms import StageTwoScenarioForm, StageThreeScenarioForm
 from .models import Member, Profile, Project, StageTwoScenario, StageThreeScenario
 from .stage3 import (
-    ShareConstraint,
     build_member_inputs,
     build_scenario_parameters,
+    derive_price_envelope,
     evaluate_scenario,
-    optimize_member_cost,
-    optimize_total_cost,
+    generate_trace_rows,
+    optimize_everyone_wins,
+    optimize_group_benefit,
+    price_candidates,
     reference_cost_guide,
 )
 from .stage2 import load_project_timeseries, build_iteration_configs, evaluate_sharing
@@ -160,7 +162,7 @@ class ProfileBasedMemberGenerationTests(TestCase):
 class StageThreeFormsTests(TestCase):
     def test_scenario_form_default_initial(self):
         defaults = StageThreeScenarioForm.default_initial()
-        self.assertAlmostEqual(defaults["community_price_eur_per_kwh"], 0.07)
+        self.assertEqual(defaults["community_price_eur_per_kwh"], "")
         self.assertEqual(defaults["tariff_context"], "community_grid")
         self.assertGreater(defaults["community_variable_fee_eur_per_kwh"], 0)
 
@@ -197,34 +199,29 @@ class StageThreeCalculatorTests(TestCase):
             project=self.project,
             name="Scénario de test",
             community_price_eur_per_kwh=0.18,
-            default_share=1.0,
-            coverage_cap=1.0,
             community_fixed_fee_total_eur=200,
             community_per_member_fee_eur=50,
         )
-        constraints = {
-            self.member_a.id: ShareConstraint(min_share=1.0, max_share=1.0, override=1.0),
-            self.member_b.id: ShareConstraint(min_share=0.5, max_share=0.5, override=0.5),
-        }
-        params = build_scenario_parameters(scenario, constraints)
-        evaluation = evaluate_scenario(self._inputs(), params)
+        params = build_scenario_parameters(scenario)
+        evaluation = evaluate_scenario(
+            self._inputs(), params, price=scenario.community_price_eur_per_kwh
+        )
 
         self.assertAlmostEqual(evaluation.total_current_cost, 4920.0, places=2)
-        self.assertAlmostEqual(evaluation.total_community_cost, 4120.0, places=2)
-        self.assertAlmostEqual(evaluation.savings, 800.0, places=2)
+        self.assertAlmostEqual(evaluation.total_community_cost, 3720.0, places=2)
+        self.assertAlmostEqual(evaluation.savings, 1200.0, places=2)
         breakdown_alpha = next(
             b for b in evaluation.member_breakdowns if b.member_id == self.member_a.id
         )
         self.assertAlmostEqual(breakdown_alpha.share, 1.0)
         self.assertAlmostEqual(breakdown_alpha.community_cost, 2050.0, places=2)
+        self.assertAlmostEqual(breakdown_alpha.delta_cost, 550.0, places=2)
 
     def test_evaluate_scenario_includes_variable_fee_and_injection_override(self):
         scenario = StageThreeScenario.objects.create(
             project=self.project,
             name="Variable",
             community_price_eur_per_kwh=0.20,
-            default_share=0.0,
-            coverage_cap=1.0,
             community_variable_fee_eur_per_kwh=0.01,
             community_injection_price_eur_per_kwh=0.06,
         )
@@ -232,12 +229,10 @@ class StageThreeCalculatorTests(TestCase):
         self.member_a.injection_unit_price_eur_per_kwh = 0.04
         self.member_a.save()
 
-        constraints = {
-            self.member_a.id: ShareConstraint(min_share=1.0, max_share=1.0, override=1.0),
-            self.member_b.id: ShareConstraint(min_share=0.0, max_share=0.0, override=0.0),
-        }
-        params = build_scenario_parameters(scenario, constraints)
-        evaluation = evaluate_scenario(self._inputs(), params)
+        params = build_scenario_parameters(scenario)
+        evaluation = evaluate_scenario(
+            self._inputs(), params, price=scenario.community_price_eur_per_kwh
+        )
 
         breakdown_alpha = next(
             b for b in evaluation.member_breakdowns if b.member_id == self.member_a.id
@@ -245,38 +240,50 @@ class StageThreeCalculatorTests(TestCase):
         self.assertAlmostEqual(breakdown_alpha.community_variable_cost, 100.0, places=2)
         self.assertAlmostEqual(breakdown_alpha.injection_revenue, 30.0, places=2)
         self.assertAlmostEqual(breakdown_alpha.community_cost, 2170.0, places=2)
+        self.assertAlmostEqual(breakdown_alpha.delta_cost, 410.0, places=2)
 
-    def test_optimize_total_cost_prefers_community_when_cheaper(self):
+    def test_optimize_group_benefit_uses_derived_price_range(self):
         scenario = StageThreeScenario.objects.create(
             project=self.project,
             name="Optimisation",
-            community_price_eur_per_kwh=0.18,
-            default_share=0.0,
-            coverage_cap=1.0,
-            community_fixed_fee_total_eur=200,
-            community_per_member_fee_eur=50,
         )
-        params = build_scenario_parameters(scenario, {})
-        result = optimize_total_cost(self._inputs(), params)
+        params = build_scenario_parameters(scenario)
+        envelope = derive_price_envelope(self._inputs(), params)
+        result = optimize_group_benefit(self._inputs(), params, envelope)
         self.assertIsNotNone(result)
-        self.assertAlmostEqual(result.evaluation.total_community_cost, 3720.0, places=2)
-        self.assertAlmostEqual(result.evaluation.savings, 1200.0, places=2)
-        self.assertEqual(result.shares[self.member_a.id], 1.0)
-        self.assertEqual(result.shares[self.member_b.id], 1.0)
+        self.assertAlmostEqual(result.evaluation.price_eur_per_kwh, envelope.effective_min, places=3)
+        self.assertGreater(result.evaluation.savings, 0)
 
-    def test_optimize_member_cost_targets_single_member(self):
+    def test_optimize_everyone_wins_respects_member_savings(self):
         scenario = StageThreeScenario.objects.create(
             project=self.project,
-            name="Solo",
-            community_price_eur_per_kwh=0.20,
-            default_share=0.0,
-            coverage_cap=1.0,
+            name="Fair",
+            price_min_eur_per_kwh=0.25,
+            price_max_eur_per_kwh=0.27,
         )
-        params = build_scenario_parameters(scenario, {})
-        result = optimize_member_cost(self._inputs(), params, self.member_a.id)
+        params = build_scenario_parameters(scenario)
+        envelope = derive_price_envelope(self._inputs(), params)
+        result = optimize_everyone_wins(self._inputs(), params, envelope)
         self.assertIsNotNone(result)
-        self.assertIn(self.member_a.id, result.shares)
-        self.assertGreaterEqual(result.shares[self.member_a.id], 0.0)
+        self.assertAlmostEqual(result.evaluation.price_eur_per_kwh, 0.25, places=3)
+        for breakdown in result.evaluation.member_breakdowns:
+            self.assertGreaterEqual(breakdown.delta_cost, -1e-6)
+
+    def test_generate_trace_rows_matches_evaluation(self):
+        scenario = StageThreeScenario.objects.create(
+            project=self.project,
+            name="Trace",
+            community_price_eur_per_kwh=0.18,
+        )
+        params = build_scenario_parameters(scenario)
+        prices = [0.18]
+        rows = generate_trace_rows(self._inputs(), params, prices)
+        self.assertEqual(len(rows), 2)
+        evaluation = evaluate_scenario(self._inputs(), params, price=0.18)
+        alpha_row = next(row for row in rows if row["member_id"] == self.member_a.id)
+        self.assertAlmostEqual(alpha_row["community_cost_eur"], 1900.0, places=2)
+        self.assertAlmostEqual(alpha_row["delta_cost_eur"], 700.0, places=2)
+        self.assertAlmostEqual(alpha_row["group_total_savings_eur"], evaluation.savings, places=2)
 
 
 class StageThreeReferenceTests(TestCase):
@@ -289,35 +296,40 @@ class StageThreeReferenceTests(TestCase):
 
 
 class StageThreeFormTests(TestCase):
-    def test_scenario_form_requires_price_information(self):
+    def test_scenario_form_accepts_empty_price(self):
         form = StageThreeScenarioForm(
             data={
                 "name": "FormTest",
                 "community_price_eur_per_kwh": "",
                 "price_min_eur_per_kwh": "",
                 "price_max_eur_per_kwh": "",
-                "price_step_eur_per_kwh": "0.01",
-                "default_share": "1",
-                "coverage_cap": "1",
                 "community_fixed_fee_total_eur": "0",
                 "community_per_member_fee_eur": "0",
-                "fee_allocation": "participants",
+                "community_variable_fee_eur_per_kwh": "0",
+                "community_injection_price_eur_per_kwh": "",
+                "tariff_context": "community_grid",
+                "notes": "",
+            }
+        )
+        self.assertTrue(form.is_valid())
+
+    def test_scenario_form_rejects_inverted_bounds(self):
+        form = StageThreeScenarioForm(
+            data={
+                "name": "Bornes",
+                "community_price_eur_per_kwh": "",
+                "price_min_eur_per_kwh": "0.30",
+                "price_max_eur_per_kwh": "0.20",
+                "community_fixed_fee_total_eur": "0",
+                "community_per_member_fee_eur": "0",
+                "community_variable_fee_eur_per_kwh": "0",
+                "community_injection_price_eur_per_kwh": "",
+                "tariff_context": "community_grid",
                 "notes": "",
             }
         )
         self.assertFalse(form.is_valid())
-        self.assertIn("prix communautaire", form.errors.as_text())
-
-    def test_scenario_member_form_enforces_bounds(self):
-        form = StageThreeScenarioMemberForm(
-            data={
-                "share_override": "0.9",
-                "min_share": "0.8",
-                "max_share": "0.5",
-            }
-        )
-        self.assertFalse(form.is_valid())
-        self.assertIn("borne minimale", form.errors.as_text())
+        self.assertIn("borne minimum", form.errors.as_text())
 
 
 class StageTwoScenarioFormTests(TestCase):
