@@ -8,14 +8,19 @@
 
   <div class="grid">
     <div class="card">
-      <h3>Créer un nouveau profil (courbe 15-min)</h3>
+      <h3>Créer un nouveau profil (année complète)</h3>
       <form method="post" action="{% url 'profile_create' %}" enctype="multipart/form-data">
         {% csrf_token %}
         <label>Nom du profil</label>
         <input class="input" type="text" name="name" required>
-        <label style="margin-top:.5rem">Fichier CSV (Production,Consommation)</label>
-        <input class="input" type="file" name="profile_csv" accept=".csv" required>
-        <p class="muted">Le CSV doit contenir 96 lignes (24h par intervalles de 15 min) avec les colonnes `Production` et `Consommation`.</p>
+        <label>Type de profil</label>
+        <select class="input" name="profile_type" required>
+          <option value="consumption">Consommation (ConsoType)</option>
+          <option value="production">Production (ProdType)</option>
+        </select>
+        <label style="margin-top:.5rem">Fichier (CSV ou Excel, 35 040 lignes)</label>
+        <input class="input" type="file" name="profile_csv" accept=".csv,.xls,.xlsx" required>
+        <p class="muted">Horodatage sur une année complète avec pas de 15 minutes. Les colonnes numériques sont détectées automatiquement ("1 kWh" ou "Prod (1 kWh)").</p>
         <button class="btn" type="submit" style="margin-top:.75rem">Créer le profil</button>
       </form>
     </div>
@@ -24,14 +29,23 @@
       <h3>Profils existants</h3>
       <table>
         <thead>
-          <tr><th>Nom</th><th>Version</th><th>Actif</th><th>Graphique</th></tr>
+          <tr><th>Nom</th><th>Type</th><th>Lignes</th><th>Total (kWh)</th><th>Graphique</th></tr>
         </thead>
         <tbody>
           {% for p in profiles %}
             <tr>
               <td>{{ p.name }}</td>
-              <td>{{ p.version }}</td>
-              <td>{% if p.is_active %}Oui{% else %}Non{% endif %}</td>
+              <td>{{ p.get_profile_type_display }}</td>
+              <td>{% if p.metadata %}{{ p.metadata.row_count }}{% else %}—{% endif %}</td>
+              <td>
+                {% if p.metadata %}
+                  {% if p.profile_type == 'production' %}
+                    {{ p.metadata.totals.value_kwh|floatformat:0 }}
+                  {% else %}
+                    {{ p.metadata.totals.value_kwh|floatformat:0 }}
+                  {% endif %}
+                {% else %}—{% endif %}
+              </td>
               <td>
                 {% if p.graph %}
                   <img src="{{ p.graph.url }}" alt="Graph of {{ p.name }}" style="max-width: 100px;">
@@ -41,7 +55,7 @@
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="4" class="muted">Aucun profil pour l’instant.</td></tr>
+            <tr><td colspan="5" class="muted">Aucun profil pour l’instant.</td></tr>
           {% endfor %}
         </tbody>
       </table>

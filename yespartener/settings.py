@@ -65,3 +65,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Année de référence utilisée pour réaligner les séries temporelles importées.
+# Peut être surchargée via la variable d'environnement TIMESERIES_REFERENCE_YEAR.
+try:
+    TIMESERIES_REFERENCE_YEAR = int(os.environ.get("TIMESERIES_REFERENCE_YEAR", "2025"))
+except (TypeError, ValueError):
+    TIMESERIES_REFERENCE_YEAR = 2025
