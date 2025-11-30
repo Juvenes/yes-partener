@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, Union
+import io
 
 import pandas as pd
 from django.conf import settings
@@ -66,6 +67,7 @@ def parse_member_timeseries(source: Readable) -> TimeseriesResult:
 
     df = frame[[timestamp_col]].rename(columns={timestamp_col: "timestamp"})
     df["timestamp"], normalized_year = _normalise_to_reference_year(df["timestamp"])
+    df = attach_calendar_index(df)
 
     if production_col:
         df["production_kwh"] = _to_float_series(frame[production_col])
@@ -108,6 +110,7 @@ def parse_profile_timeseries(source: Readable, profile_type: str) -> TimeseriesR
         columns={timestamp_col: "timestamp", preferred: "value_kwh"}
     )
     df["timestamp"], normalized_year = _normalise_to_reference_year(df["timestamp"])
+    df = attach_calendar_index(df)
     df["value_kwh"] = _to_float_series(df["value_kwh"])
 
     value_total = float(df["value_kwh"].sum())
@@ -137,6 +140,71 @@ def parse_profile_timeseries(source: Readable, profile_type: str) -> TimeseriesR
     return TimeseriesResult(df, metadata)
 
 
+def build_indexed_template(source: Readable, label: Optional[str] = None) -> pd.DataFrame:
+    """Generate the Month/Week/Weekday/Quarter view from a raw file.
+
+    The input is expected to contain a timestamp column plus consumption/injection
+    columns (headers are detected automatically). The output dataframe always
+    includes the derived calendar keys so rows can be compared across years and
+    leap years.
+    """
+
+    frame, timestamp_col = _load_base_dataframe(source)
+    production_col, consumption_col = _identify_energy_columns(
+        [c for c in frame.columns if c != timestamp_col]
+    )
+
+    if not production_col and not consumption_col:
+        raise TimeseriesError(
+            "Impossible de détecter une colonne de consommation ou d'injection."
+        )
+
+    df = frame[[timestamp_col]].rename(columns={timestamp_col: "timestamp"})
+    df = attach_calendar_index(df)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce").dt.strftime(
+        "%Y-%m-%d %H:%M"
+    )
+
+    # Capture a human label if provided as an explicit field or argument.
+    if label:
+        df["label"] = label
+    elif "label" in frame.columns:
+        df["label"] = frame["label"].fillna("")
+    elif "Label" in frame.columns:
+        df["label"] = frame["Label"].fillna("")
+    else:
+        df["label"] = ""
+
+    if consumption_col:
+        df["consumption_kwh"] = _to_float_series(frame[consumption_col])
+    else:
+        df["consumption_kwh"] = 0.0
+
+    if production_col:
+        df["injection_kwh"] = _to_float_series(frame[production_col])
+    else:
+        df["injection_kwh"] = 0.0
+
+    # Reorder columns to match the expected template layout.
+    ordered = [
+        "label",
+        "timestamp",
+        "month",
+        "week_of_month",
+        "weekday",
+        "quarter_index",
+        "consumption_kwh",
+        "injection_kwh",
+    ]
+
+    # Ensure all columns exist before reordering.
+    for col in ordered:
+        if col not in df.columns:
+            df[col] = None
+
+    return df[ordered]
+
+
 def _load_base_dataframe(source: Readable) -> Tuple[pd.DataFrame, str]:
     df = _read_tabular(source)
     if df.empty:
@@ -151,7 +219,7 @@ def _load_base_dataframe(source: Readable) -> Tuple[pd.DataFrame, str]:
             "Impossible d'identifier la colonne temporelle. Assurez-vous que la première colonne contient des dates." 
         )
 
-    df[timestamp_col] = pd.to_datetime(df[timestamp_col], errors="coerce", dayfirst=True)
+    df[timestamp_col] = _parse_timestamps(df[timestamp_col])
     df = df.dropna(subset=[timestamp_col])
     df = df.sort_values(timestamp_col)
 
@@ -170,31 +238,55 @@ def _read_tabular(source: Readable) -> pd.DataFrame:
 
     # Uploaded file like Django's InMemoryUploadedFile
     upload = source
-    name = (upload.name or "").lower()
-    upload.seek(0)
-    if name.endswith((".xlsx", ".xls", ".xlsm")):
-        df = pd.read_excel(upload)
+    name = getattr(upload, "name", "")
+    if hasattr(upload, "seek"):
         upload.seek(0)
+    if name and name.lower().endswith((".xlsx", ".xls", ".xlsm")):
+        df = pd.read_excel(upload)
+        if hasattr(upload, "seek"):
+            upload.seek(0)
         return df
 
+    text_buffer = None
+    if hasattr(upload, "read"):
+        content = upload.read()
+        if hasattr(upload, "seek"):
+            upload.seek(0)
+        if isinstance(content, bytes):
+            content = content.decode("utf-8", errors="ignore")
+        text_buffer = io.StringIO(content)
+
+    if text_buffer is None:
+        raise TimeseriesError("Impossible de lire le fichier fourni.")
+
     try:
-        df = pd.read_csv(upload, sep=None, engine="python")
+        df = pd.read_csv(text_buffer, sep=None, engine="python")
     except Exception:
-        upload.seek(0)
-        df = pd.read_csv(upload, sep=";", engine="python")
-    upload.seek(0)
+        text_buffer.seek(0)
+        df = pd.read_csv(text_buffer, sep=";", engine="python")
+
     return df
 
 
 def _detect_timestamp_column(columns: Iterable[str], df: pd.DataFrame) -> Optional[str]:
     for col in columns:
         try:
-            parsed = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
+            parsed = _parse_timestamps(df[col])
         except Exception:
             continue
         if parsed.notna().mean() > 0.6:
             return col
     return None
+
+
+def _parse_timestamps(series: pd.Series) -> pd.Series:
+    """Parse timestamps while respecting both ISO and day-first inputs."""
+
+    sample = series.astype(str).str.strip().head(50)
+    yearfirst_share = sample.str.match(r"^\d{4}-\d{2}-\d{2}").mean()
+    if yearfirst_share > 0.5:
+        return pd.to_datetime(series, errors="coerce", yearfirst=True)
+    return pd.to_datetime(series, errors="coerce", dayfirst=True)
 
 
 def _identify_energy_columns(columns: List[str]) -> Tuple[Optional[str], Optional[str]]:
@@ -220,6 +312,40 @@ def _identify_energy_columns(columns: List[str]) -> Tuple[Optional[str], Optiona
             production = remaining[0]
 
     return production, consumption
+
+
+def attach_calendar_index(df: pd.DataFrame, timestamp_col: str = "timestamp") -> pd.DataFrame:
+    """Add month/week/weekday/quarter columns for deterministic alignment.
+
+    These columns provide a stable key (Month, Week, Weekday, Quarter) so that
+    datasets from different years or leap years can be compared row-for-row
+    without relying on a specific calendar year.
+    """
+
+    if timestamp_col not in df.columns:
+        return df
+
+    ts = pd.to_datetime(df[timestamp_col], errors="coerce")
+
+    # Month as two-digit string (01-12) for stable sorting.
+    df["month"] = ts.dt.month.apply(lambda m: f"{int(m):02d}" if pd.notna(m) else "")
+
+    # Week of month with a simple 1-5 range (days 1-7 => week 1, 8-14 => week 2, ...).
+    df["week_of_month"] = ts.dt.day.apply(
+        lambda day: int(((day - 1) // 7) + 1) if pd.notna(day) else None
+    )
+
+    # ISO weekday (Monday=1, Sunday=7) to keep Monday aligned with Monday across years.
+    df["weekday"] = ts.dt.weekday.add(1)
+
+    # Quarter index in the day (1..96) so every 15-minute slot is uniquely keyed.
+    df["quarter_index"] = (
+        (ts.dt.hour.fillna(0).astype(int) * 60 + ts.dt.minute.fillna(0).astype(int))
+        // 15
+        + 1
+    )
+
+    return df
 
 
 def _select_profile_column(profile_type: str, columns: List[str]) -> str:

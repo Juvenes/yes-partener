@@ -40,7 +40,9 @@ from .stage3 import (
 )
 from .timeseries import (
     TimeseriesError,
+    attach_calendar_index,
     build_metadata,
+    build_indexed_template,
     parse_member_timeseries,
     parse_profile_timeseries,
 )
@@ -93,6 +95,48 @@ def global_parameter_list(request):
         "gp_form": gp_form,
         "gp_list": gp_list
     })
+
+
+def template_helper(request):
+    """Provide a simple template and converter for annual 15-minute files."""
+
+    if request.method == "POST":
+        upload = request.FILES.get("timeseries_file")
+        label = request.POST.get("label", "").strip()
+        if not upload:
+            messages.error(request, "Veuillez sélectionner un fichier à convertir.")
+            return redirect("template_helper")
+
+        try:
+            converted = build_indexed_template(upload, label=label or None)
+        except TimeseriesError as exc:
+            messages.error(request, str(exc))
+            return redirect("template_helper")
+
+        buffer = io.StringIO()
+        converted.to_csv(buffer, index=False)
+        buffer.seek(0)
+
+        response = HttpResponse(buffer.getvalue(), content_type="text/csv")
+        filename = slugify(label or upload.name.rsplit(".", 1)[0] or "timeseries")
+        response["Content-Disposition"] = f'attachment; filename="{filename}_indexed.csv"'
+        return response
+
+    example = build_indexed_template(
+        io.StringIO(
+            "Date+Quart time;consumption;injection;label\n"
+            "2024-06-03 00:00;1;0;Bureau A\n"
+            "2024-06-03 00:30;2;0;Bureau A\n"
+            "2024-02-29 00:15;0.5;0.2;Parc solaire\n"
+        )
+    )
+
+    preview = example.head(6).to_dict("records")
+    return render(
+        request,
+        "core/template_helper.html",
+        {"preview_rows": preview},
+    )
 
 
 @require_http_methods(["POST"])
@@ -479,13 +523,15 @@ def csv_template_timeseries(request):
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="timeseries_template.csv"'
     writer = csv.writer(response)
-    writer.writerow(["Time", "Production", "Consommation"])
+    writer.writerow(["Date+Quart time", "consumption", "injection", "label"])
 
-    t = datetime(2000, 1, 1, 0, 0)
+    base = datetime(2024, 1, 1, 0, 0)
     step = timedelta(minutes=15)
-    for _ in range(96):
-        writer.writerow([t.strftime("%H:%M"), "", ""])
-        t += step
+    for _ in range(8):
+        writer.writerow([base.strftime("%Y-%m-%d %H:%M"), "", "", "Exemple"])
+        base += step
+    writer.writerow(["...", "", "", ""])
+    writer.writerow(["(35 040 lignes sur une année complète)", "", "", ""])
     return response
 
 def project_analysis_page(request, project_id):

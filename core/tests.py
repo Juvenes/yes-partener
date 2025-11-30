@@ -20,7 +20,7 @@ from .stage3 import (
     reference_cost_guide,
 )
 from .stage2 import load_project_timeseries, build_iteration_configs, evaluate_sharing
-from .timeseries import parse_profile_timeseries
+from .timeseries import parse_profile_timeseries, build_indexed_template
 
 
 class ProfileParsingTests(TestCase):
@@ -157,6 +157,41 @@ class ProfileBasedMemberGenerationTests(TestCase):
             0.0,
             places=5,
         )
+
+
+class TemplateIndexingTests(TestCase):
+    def test_calendar_index_and_leap_year_alignment(self):
+        csv_content = """Date+Quart time;consumption;injection;label
+2024-06-03 00:00;1;0;Site A
+2024-06-03 00:30;2;0;Site A
+2024-02-29 00:15;0.5;0.2;Site B
+"""
+
+        df = build_indexed_template(ContentFile(csv_content.encode("utf-8")))
+
+        # 00:30 should map to the third quarter of the day.
+        row_0030 = df[df["timestamp"].str.contains("00:30")].iloc[0]
+        self.assertEqual(row_0030["quarter_index"], 3)
+        self.assertEqual(row_0030["week_of_month"], 1)
+        self.assertEqual(row_0030["weekday"], 1 + datetime(2024, 6, 3).weekday())
+
+        # Leap-day entry keeps its own calendar slot.
+        leap_row = df[df["timestamp"].str.contains("02-29")].iloc[0]
+        self.assertEqual(leap_row["month"], "02")
+        self.assertEqual(leap_row["week_of_month"], 5)
+        self.assertGreater(leap_row["injection_kwh"], 0)
+
+    def test_template_helper_download(self):
+        response = self.client.get(reverse("template_helper"))
+        self.assertEqual(response.status_code, 200)
+
+        upload = ContentFile(
+            b"Date+Quart time,consumption,injection\n2024-01-01 00:00,1,0"
+        )
+        upload.name = "sample.csv"
+        response = self.client.post(reverse("template_helper"), {"timeseries_file": upload})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv")
 
 
 class StageThreeFormsTests(TestCase):

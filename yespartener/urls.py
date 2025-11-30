@@ -47,6 +47,7 @@ urlpatterns = [
     # New dedicated pages
     path("profiles/", v.profile_list, name="profiles"),
     path("global-parameters/", v.global_parameter_list, name="global_parameters"),
+    path("ingestion-templates/", v.template_helper, name="template_helper"),
 
     # Keep create views, but they will redirect differently
     path("profiles/create/", v.profile_create, name="profile_create"),

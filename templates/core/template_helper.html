@@ -1,0 +1,67 @@
+{% extends "core/base.html" %}
+
+{% block title %}Modèle d'import – Yes-Partner{% endblock %}
+
+{% block content %}
+  <h1>Modèle d'import annuel</h1>
+  <p class="muted">Convertissez vos fichiers (profil ou données réelles) au format unifié <strong>Month / Week / Weekday / Quarter</strong> pour comparer plusieurs années et gérer les années bissextiles.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Télécharger un modèle vierge</h3>
+      <p class="muted">Structure attendue : <code>Date+Quart time, consumption, injection, label</code>. Une fois importé, chaque ligne sera enrichie avec <code>month</code>, <code>week_of_month</code>, <code>weekday</code> et <code>quarter_index</code>.</p>
+      <a class="btn" href="{% url 'csv_template_timeseries' %}">Télécharger le modèle (CSV)</a>
+      <p style="margin-top:.5rem" class="muted">365 jours (ou 366 si bissextile) × 96 pas de 15 minutes = 35 040 lignes.</p>
+    </div>
+
+    <div class="card">
+      <h3>Convertir un fichier</h3>
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label for="label">Label (optionnel)</label>
+        <input id="label" class="input" type="text" name="label" placeholder="Éolienne Nord, Bâtiment A, …">
+
+        <label for="timeseries_file">Fichier (CSV ou Excel)</label>
+        <input id="timeseries_file" class="input" type="file" name="timeseries_file" accept=".csv,.xls,.xlsx" required>
+        <p class="muted">Colonnes supportées : <em>Date+Quart time</em> (ou équivalent), <em>consumption</em>, <em>injection</em>, <em>label</em>. Les noms exacts peuvent varier.</p>
+
+        <button class="btn" type="submit" style="margin-top:.75rem">Générer le fichier indexé</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Prévisualisation du rendu indexé</h3>
+    <p class="muted">Chaque ligne est identifiée de façon unique par <code>month</code> + <code>week_of_month</code> + <code>weekday</code> + <code>quarter_index</code>, ce qui garantit que les lundis restent alignés entre années (bissextiles incluses).</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Timestamp</th>
+          <th>Mois</th>
+          <th>Semaine</th>
+          <th>Jour</th>
+          <th>Quart</th>
+          <th>Consommation (kWh)</th>
+          <th>Injection (kWh)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in preview_rows %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td>{{ row.timestamp }}</td>
+            <td>{{ row.month }}</td>
+            <td>{{ row.week_of_month }}</td>
+            <td>{{ row.weekday }}</td>
+            <td>{{ row.quarter_index }}</td>
+            <td>{{ row.consumption_kwh }}</td>
+            <td>{{ row.injection_kwh }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="muted">Aucune donnée à afficher.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
