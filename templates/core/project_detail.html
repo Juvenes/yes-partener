@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="utf-8" />
-    <title>{{ project.name }} – Phase 1 : Ingestion</title>
+    <title>{{ project.name }} – Phase 1 : Datasets</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1200px; background-color: #f9f9f9; }
@@ -28,11 +28,12 @@
 <body>
   <p><a href="{% url 'project_list' %}">&larr; Retour aux projets</a></p>
   <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
-      <h1>{{ project.name }} — Phase 1 : Ingestion</h1>
+      <h1>{{ project.name }} — Phase 1 : Datasets</h1>
       <div class="btn-group">
+          <a href="{% url 'datasets' %}" class="btn" style="text-decoration: none; background: #455a64;">Gérer les datasets</a>
           <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="text-decoration: none;">Analyser le projet &rarr;</a>
-          <a href="{% url 'project_stage2' project.id %}" class="btn" style="text-decoration: none; background: #3949ab;">Stage 2 – Partage &rarr;</a>
-          <a href="{% url 'project_stage3' project.id %}" class="btn" style="text-decoration: none; background: #0d47a1;">Stage 3 – Communauté &rarr;</a>
+          <a href="{% url 'project_stage2' project.id %}" class="btn" style="text-decoration: none; background: #3949ab;">Stage2 – Partage &rarr;</a>
+          <a href="{% url 'project_stage3' project.id %}" class="btn" style="text-decoration: none; background: #0d47a1;">Stage3 – Communauté &rarr;</a>
       </div>
   </div>
 
@@ -47,7 +48,7 @@
   <div class="grid">
     <div class="card">
       <h2>Ajouter un membre</h2>
-      <form method="post" action="{% url 'member_create' project.id %}" enctype="multipart/form-data">
+      <form method="post" action="{% url 'member_create' project.id %}">
         {% csrf_token %}
         <label>Nom</label>
         <input class="input" type="text" name="name" required>
@@ -55,39 +56,27 @@
         <label>Utilité (optionnel)</label>
         <input class="input" type="text" name="utility" placeholder="Bureau, magasin, serveur…">
 
-        <label>Mode de données</label>
-        <select name="data_mode" class="input" id="data_mode">
-          <option value="timeseries_csv">Série 15-min via CSV</option>
-          <option value="profile_based">Basé sur profil(s) & total annuel</option>
+        <label>Dataset</label>
+        <select name="dataset" class="input" required>
+          <option value="" disabled selected>Choisissez un dataset</option>
+          {% for dataset in datasets %}
+            <option value="{{ dataset.id }}">{{ dataset.name }}</option>
+          {% endfor %}
         </select>
+        <p class="muted">Chaque membre pointe vers un dataset normalisé (index mois/semaine/jour/quarter).</p>
 
-        <div id="csv_fields">
-          <label>Fichier de données (CSV ou Excel, quart d'heure)</label>
-          <input class="input" type="file" name="timeseries_file" accept=".csv,.xls,.xlsx">
-          <p class="muted">Colonnes détectées automatiquement (horodatage + énergie). Un résumé vous sera affiché après import.</p>
-        </div>
+        <label>Total conso. annuelle (kWh) – optionnel</label>
+        <input class="input" step="0.01" min="0" type="number" name="annual_consumption_kwh" placeholder="Auto rempli si vide">
 
-        <div id="profile_fields" style="display:none">
-          <label>Profils (maintenir Ctrl/Cmd pour sélectionner plusieurs)</label>
-          <select name="profiles" class="input" multiple>
-              {% for p in profiles %}
-                <option value="{{ p.id }}">{{ p.name }}</option>
-              {% endfor %}
-          </select>
-
-          <label>Total conso. annuelle (kWh)</label>
-          <input class="input" step="0.01" min="0" type="number" name="annual_consumption_kwh" placeholder="Ex: 50000">
-
-          <label>Total prod. annuelle (kWh)</label>
-          <input class="input" step="0.01" min="0" type="number" name="annual_production_kwh" placeholder="Ex: 12000">
-        </div>
+        <label>Total prod. annuelle (kWh) – optionnel</label>
+        <input class="input" step="0.01" min="0" type="number" name="annual_production_kwh" placeholder="Auto rempli si vide">
 
         <h3 style="margin-top:1.5rem;">Données économiques (Stage 3)</h3>
 
         <label>Prix actuel de l'énergie (€/kWh)</label>
         <input class="input" type="number" step="0.001" min="0" name="current_unit_price_eur_per_kwh" value="0.25">
 
-        <label>Frais fixes annuels actuels (€)</label>
+        <label>Frais fixes annuels (€)</label>
         <input class="input" type="number" step="0.01" min="0" name="current_fixed_fee_eur" value="0.00">
 
         <label>Énergie injectée annuellement (kWh)</label>
@@ -104,7 +93,7 @@
       <h2>Membres du projet</h2>
       <table>
         <thead>
-          <tr><th>Nom</th><th>Détails du fichier</th></tr>
+          <tr><th>Nom</th><th>Dataset</th></tr>
         </thead>
         <tbody>
           {% for m in members %}
@@ -114,31 +103,28 @@
                 {% if m.utility %}<span class="muted">{{ m.utility }}</span>{% endif %}
               </td>
               <td>
-                {% if m.timeseries_file %}
+                {% if m.dataset %}
                   <div class="file-block">
-                    <a href="{{ m.timeseries_file.url }}">Télécharger le fichier</a>
-                    {% if m.timeseries_metadata %}
+                    <strong>{{ m.dataset.name }}</strong>
+                    {% if m.dataset.normalized_file %}
+                      <div><a href="{{ m.dataset.normalized_file.url }}">Excel normalisé</a></div>
+                    {% endif %}
+                    {% if m.dataset.metadata %}
                       <div class="meta-grid">
-                        <span><strong>Lignes :</strong> {{ m.timeseries_metadata.row_count }}</span>
-                        <span><strong>Début :</strong> {{ m.timeseries_metadata.start|default:"—"|slice:":16" }}</span>
-                        <span><strong>Fin :</strong> {{ m.timeseries_metadata.end|default:"—"|slice:":16" }}</span>
-                        <span><strong>Granularité :</strong> {% if m.timeseries_metadata.granularity_minutes %}{{ m.timeseries_metadata.granularity_minutes|floatformat:0 }} min{% else %}—{% endif %}</span>
-                        <span><strong>Consommation :</strong> {{ m.timeseries_metadata.totals.consumption_kwh|floatformat:0 }} kWh</span>
-                        <span><strong>Production :</strong> {{ m.timeseries_metadata.totals.production_kwh|floatformat:0 }} kWh</span>
+                        <span><strong>Lignes :</strong> {{ m.dataset.metadata.row_count }}</span>
+                        <span><strong>Consommation :</strong> {{ m.dataset.metadata.totals.consumption_kwh|floatformat:0 }} kWh</span>
+                        <span><strong>Production :</strong> {{ m.dataset.metadata.totals.production_kwh|floatformat:0 }} kWh</span>
+                        <span><strong>Granularité :</strong> {% if m.dataset.metadata.granularity_minutes %}{{ m.dataset.metadata.granularity_minutes|floatformat:0 }} min{% else %}—{% endif %}</span>
                       </div>
-                      {% if m.timeseries_metadata.warnings %}
-                        <ul class="muted" style="margin-top:.5rem; padding-left:1.2rem;">
-                          {% for warning in m.timeseries_metadata.warnings %}
-                            <li>{{ warning }}</li>
-                          {% endfor %}
-                        </ul>
+                      {% if m.dataset.tags %}
+                        <div class="muted" style="margin-top: .35rem;">Tags : {{ m.dataset.tags|join:", " }}</div>
                       {% endif %}
                     {% else %}
                       <span class="muted">Métadonnées indisponibles.</span>
                     {% endif %}
                   </div>
                 {% else %}
-                  <span class="muted">Aucun fichier</span>
+                  <span class="muted">Aucun dataset</span>
                 {% endif %}
               </td>
             </tr>
@@ -149,24 +135,5 @@
       </table>
     </div>
   </div>
-
-  <script>
-    const modeSel = document.getElementById('data_mode');
-    const csvFields = document.getElementById('csv_fields');
-    const profFields = document.getElementById('profile_fields');
-    function toggle() {
-      if (modeSel.value === 'profile_based') {
-        profFields.style.display = 'block';
-        csvFields.style.display = 'none';
-        csvFields.querySelector('input').required = false;
-      } else {
-        profFields.style.display = 'none';
-        csvFields.style.display = 'block';
-        csvFields.querySelector('input').required = true;
-      }
-    }
-    modeSel.addEventListener('change', toggle);
-    toggle();
-  </script>
 </body>
 </html>

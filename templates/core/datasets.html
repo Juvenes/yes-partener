@@ -1,0 +1,94 @@
+{% extends "core/base.html" %}
+
+{% block title %}Datasets – Yes-Partner{% endblock %}
+
+{% block content %}
+  <h1>Datasets normalisés</h1>
+  <p class="muted">Importez un seul type de fichier (CSV ou Excel) ; il sera indexé par mois, semaine, jour et quart d'heure.</p>
+
+  {% if messages %}
+    <ul class="messages">
+      {% for message in messages %}
+        <li class="{{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <div class="grid">
+    <div class="card">
+      <h3>Ajouter un dataset</h3>
+      <form method="post" action="{% url 'dataset_create' %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label>Nom</label>
+        <input class="input" type="text" name="name" required>
+
+        <label>Tags (séparés par des virgules)</label>
+        <input class="input" type="text" name="tags" placeholder="solaire, bureau, 2023">
+
+        <label>Fichier (CSV ou Excel)</label>
+        <input class="input" type="file" name="source_file" accept=".csv,.xls,.xlsx" required>
+
+        <button class="btn" type="submit" style="margin-top: 0.75rem;">Importer</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Recherche</h3>
+      <form method="get" action="{% url 'datasets' %}">
+        <input class="input" type="search" name="q" value="{{ query }}" placeholder="Nom ou tag…">
+        <button class="btn" type="submit">Filtrer</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Liste des datasets</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>Tags</th>
+          <th>Statistiques</th>
+          <th>Téléchargement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dataset in datasets %}
+          <tr>
+            <td>{{ dataset.name }}</td>
+            <td>
+              {% if dataset.tags %}
+                {% for tag in dataset.tags %}
+                  <span style="display:inline-block;background:#eef;padding:0.2rem 0.5rem;border-radius:6px;margin-right:0.25rem;">{{ tag }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if dataset.metadata %}
+                <div class="meta-grid">
+                  <span><strong>Lignes :</strong> {{ dataset.metadata.row_count }}</span>
+                  <span><strong>Consommation :</strong> {{ dataset.metadata.totals.consumption_kwh|floatformat:1 }} kWh</span>
+                  <span><strong>Production :</strong> {{ dataset.metadata.totals.production_kwh|floatformat:1 }} kWh</span>
+                  <span><strong>Granularité :</strong> {% if dataset.metadata.granularity_minutes %}{{ dataset.metadata.granularity_minutes|floatformat:0 }} min{% else %}—{% endif %}</span>
+                </div>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if dataset.normalized_file %}
+                <a href="{{ dataset.normalized_file.url }}">Excel normalisé</a>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="muted">Aucun dataset pour l’instant.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

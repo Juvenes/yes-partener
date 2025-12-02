@@ -355,9 +355,13 @@ def reference_cost_guide() -> Dict[str, CostGuideSection]:
 def build_member_inputs(members: Iterable) -> List[MemberCostInput]:
     inputs: List[MemberCostInput] = []
     for member in members:
+        metadata = {}
+        if hasattr(member, "dataset") and member.dataset and member.dataset.metadata:
+            metadata = member.dataset.metadata
+        totals = metadata.get("totals", {}) if isinstance(metadata, dict) else {}
         consumption = _safe_float(
             member.annual_consumption_kwh,
-            (member.timeseries_metadata or {}).get("totals", {}).get("consumption_kwh"),
+            totals.get("consumption_kwh"),
         )
         inputs.append(
             MemberCostInput(

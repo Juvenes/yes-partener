@@ -18,6 +18,8 @@
     table { width:100%; border-collapse: collapse; }
     th, td { border-bottom: 1px solid #eee; padding: .8rem .4rem; text-align: left; }
     .muted { color: #666; }
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .35rem; margin-top: .5rem; font-size: .9rem; }
+    .meta-grid span { background: #f4f4f8; padding: .4rem .6rem; border-radius: 6px; display: inline-block; }
   </style>
 </head>
 <body>
@@ -25,7 +27,7 @@
     <h1><a href="{% url 'project_list' %}" style="color: inherit; text-decoration: none;">Yes-Partner 🚀</a></h1>
     <nav>
       <a href="{% url 'project_list' %}">Projets</a>
-      <a href="{% url 'profiles' %}">Profils</a>
+      <a href="{% url 'datasets' %}">Datasets</a>
       <a href="{% url 'global_parameters' %}">Paramètres Globaux</a>
       <a href="{% url 'template_helper' %}">Modèle d'import</a>
     </nav>

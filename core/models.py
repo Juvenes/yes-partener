@@ -2,34 +2,22 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 # ---- GLOBAL SHARED PROFILE ----
-class Profile(models.Model):
-    PROFILE_TYPES = [
-        ("consumption", "Consommation"),
-        ("production", "Production"),
-    ]
-
+class Dataset(models.Model):
     name = models.CharField(max_length=200, unique=True)
-    profile_type = models.CharField(max_length=20, choices=PROFILE_TYPES, default="consumption")
-    # Complete year of quarter-hour values (~35k rows) stored as JSON.
-    points = models.JSONField(help_text="List of quarter-hour values for a full year")
+    tags = models.JSONField(default=list, blank=True)
+    source_file = models.FileField(upload_to="datasets/source/")
+    normalized_file = models.FileField(upload_to="datasets/normalized/")
     metadata = models.JSONField(blank=True, null=True)
-    version = models.PositiveIntegerField(default=1)
-    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    graph = models.ImageField(upload_to='profile_graphs/', blank=True, null=True)
 
     class Meta:
         ordering = ["name"]
 
     def __str__(self):
-        return f"{self.name} v{self.version}"
+        return self.name
 
-    def is_valid_shape(self):
-        return isinstance(self.points, list) and len(self.points) >= 96
-
-    @property
-    def point_count(self):
-        return len(self.points) if isinstance(self.points, list) else 0
+    def tag_list(self):
+        return [tag for tag in (self.tags or []) if tag]
 
 # ---- PROJECT & MEMBERS ----
 class Project(models.Model):
@@ -44,22 +32,11 @@ class Project(models.Model):
         return self.name
 
 class Member(models.Model):
-    DATA_MODE_CHOICES = [
-        ("timeseries_csv", "Série 15-min via CSV"),
-        ("profile_based", "Basé sur profil(s)"),
-    ]
-
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="members", null=True, blank=True)
+    dataset = models.ForeignKey(Dataset, on_delete=models.PROTECT, related_name="members", null=True, blank=True)
     name = models.CharField("Name", max_length=200)
     utility = models.CharField("Utility", max_length=200, blank=True)
-    
-    data_mode = models.CharField(max_length=20, choices=DATA_MODE_CHOICES, default="timeseries_csv")
 
-    # Mode: timeseries_csv
-    timeseries_file = models.FileField(upload_to="timeseries/", blank=True, null=True)
-    timeseries_metadata = models.JSONField(blank=True, null=True)
-
-    # Mode: profile_based
     annual_consumption_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
     annual_production_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
 
@@ -90,15 +67,9 @@ class Member(models.Model):
         ordering = ["name"]
 
     def __str__(self):
-        return f"{self.name} ({self.project.name})"
-
-class MemberProfile(models.Model):
-    """Lien N:N entre Membre et Profil (un membre peut avoir plusieurs profils)."""
-    member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="member_profiles")
-    profile = models.ForeignKey(Profile, on_delete=models.PROTECT, related_name="member_profiles")
-
-    class Meta:
-        unique_together = ("member", "profile")
+        if self.project:
+            return f"{self.name} ({self.project.name})"
+        return self.name
 
 class GlobalParameter(models.Model):
     """Small global KV store for shared parameters (JSON or text)."""

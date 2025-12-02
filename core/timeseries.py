@@ -66,8 +66,9 @@ def parse_member_timeseries(source: Readable) -> TimeseriesResult:
     warnings: List[str] = []
 
     df = frame[[timestamp_col]].rename(columns={timestamp_col: "timestamp"})
-    df["timestamp"], normalized_year = _normalise_to_reference_year(df["timestamp"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
     df = attach_calendar_index(df)
+    df["timestamp"] = _align_to_common_year(df["timestamp"])
 
     if production_col:
         df["production_kwh"] = _to_float_series(frame[production_col])
@@ -91,7 +92,7 @@ def parse_member_timeseries(source: Readable) -> TimeseriesResult:
         detected_cols,
         file_type="member_timeseries",
         warnings=warnings,
-        normalized_year=normalized_year,
+        normalized_year=None,
     )
     return TimeseriesResult(df, metadata)
 
@@ -109,8 +110,9 @@ def parse_profile_timeseries(source: Readable, profile_type: str) -> TimeseriesR
     df = frame[[timestamp_col, preferred]].rename(
         columns={timestamp_col: "timestamp", preferred: "value_kwh"}
     )
-    df["timestamp"], normalized_year = _normalise_to_reference_year(df["timestamp"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
     df = attach_calendar_index(df)
+    df["timestamp"] = _align_to_common_year(df["timestamp"])
     df["value_kwh"] = _to_float_series(df["value_kwh"])
 
     value_total = float(df["value_kwh"].sum())
@@ -134,7 +136,7 @@ def parse_profile_timeseries(source: Readable, profile_type: str) -> TimeseriesR
         {"timestamp": timestamp_col, "value": preferred},
         file_type=f"profile_{profile_type}",
         totals_override=totals,
-        normalized_year=normalized_year,
+        normalized_year=None,
     )
 
     return TimeseriesResult(df, metadata)
@@ -469,10 +471,17 @@ def build_metadata(
         totals=totals,
         detected_columns=detected,
         file_type=file_type,
-        normalized_year=normalized_year or (int(start_ts.year) if pd.notna(start_ts) else None),
+        normalized_year=normalized_year if normalized_year is not None else (int(start_ts.year) if pd.notna(start_ts) else None),
         warnings=warnings or [],
     )
     return metadata
+
+
+def _align_to_common_year(series: pd.Series, target_year: int = 2000) -> pd.Series:
+    timestamps = pd.to_datetime(series, errors="coerce")
+    return timestamps.apply(
+        lambda ts: ts.replace(year=target_year) if pd.notna(ts) else pd.NaT
+    )
 
 
 def _get_reference_year() -> Optional[int]:

@@ -3,11 +3,11 @@ from django.views.decorators.http import require_http_methods
 from django.http import HttpResponseBadRequest, HttpResponse
 from dataclasses import asdict
 from typing import Dict, List
+from django.db.models import Q
 from .models import (
     Project,
     Member,
-    MemberProfile,
-    Profile,
+    Dataset,
     GlobalParameter,
     StageTwoScenario,
     StageThreeScenario,
@@ -15,8 +15,7 @@ from .models import (
 from .forms import (
     ProjectForm,
     MemberForm,
-    MemberProfileForm,
-    ProfileForm,
+    DatasetForm,
     GlobalParameterForm,
     StageTwoScenarioForm,
     StageThreeMemberCostForm,
@@ -40,19 +39,14 @@ from .stage3 import (
 )
 from .timeseries import (
     TimeseriesError,
-    attach_calendar_index,
-    build_metadata,
     build_indexed_template,
     parse_member_timeseries,
-    parse_profile_timeseries,
 )
 import csv
 from datetime import datetime, timedelta
 import json
-import matplotlib.pyplot as plt
 from django.core.files.base import ContentFile
 import io
-from django.db import IntegrityError # Import IntegrityError
 from django.contrib import messages
 from django.utils.text import slugify
 import pandas as pd
@@ -78,14 +72,96 @@ def project_list(request):
         },
     )
 
-# New view for the profiles page
-def profile_list(request):
-    profiles = Profile.objects.filter(is_active=True).order_by("name")
-    profile_form = ProfileForm()
-    return render(request, "core/profiles.html", {
-        "profiles": profiles,
-        "profile_form": profile_form
-    })
+# Central dataset management page
+def dataset_list(request):
+    query = request.GET.get("q", "").strip()
+    datasets = Dataset.objects.all().order_by("name")
+    if query:
+        datasets = datasets.filter(
+            Q(name__icontains=query) | Q(tags__icontains=query)
+        )
+    dataset_form = DatasetForm()
+    return render(
+        request,
+        "core/datasets.html",
+        {
+            "datasets": datasets,
+            "dataset_form": dataset_form,
+            "query": query,
+        },
+    )
+
+
+@require_http_methods(["POST"])
+def dataset_create(request):
+    form = DatasetForm(request.POST, request.FILES)
+    if not form.is_valid():
+        messages.error(request, "Formulaire dataset invalide : vérifiez les champs et le fichier.")
+        return redirect("datasets")
+
+    upload = form.cleaned_data.get("source_file")
+    if not upload:
+        messages.error(request, "Veuillez sélectionner un fichier de données.")
+        return redirect("datasets")
+
+    try:
+        parse_result = parse_member_timeseries(upload)
+    except TimeseriesError as exc:
+        messages.error(request, f"Import impossible : {exc}")
+        return redirect("datasets")
+
+    df = parse_result.data.copy()
+    if "label" in df.columns:
+        df = df.drop(columns=["label"])
+
+    ordered = [
+        "timestamp",
+        "month",
+        "week_of_month",
+        "weekday",
+        "quarter_index",
+        "production_kwh",
+        "consumption_kwh",
+    ]
+    for col in ordered:
+        if col not in df.columns:
+            df[col] = None
+    df = df[ordered]
+
+    normalized_buffer = io.BytesIO()
+    df.to_excel(normalized_buffer, index=False)
+    normalized_buffer.seek(0)
+
+    tags_raw = form.cleaned_data.get("tags") or ""
+    tag_list = [tag.strip() for tag in tags_raw.split(",") if tag.strip()]
+
+    dataset = Dataset(
+        name=form.cleaned_data["name"],
+        tags=tag_list,
+        metadata=asdict(parse_result.metadata),
+    )
+
+    upload.seek(0)
+    dataset.source_file.save(upload.name or f"dataset_{dataset.name}.csv", upload, save=False)
+    dataset.normalized_file.save(
+        f"{slugify(dataset.name)}_normalized.xlsx",
+        ContentFile(normalized_buffer.getvalue()),
+        save=False,
+    )
+    dataset.save()
+
+    totals = parse_result.metadata.totals or {}
+    messages.success(
+        request,
+        (
+            f"Dataset '{dataset.name}' importé : {parse_result.metadata.row_count} lignes, "
+            f"Conso {totals.get('consumption_kwh', 0):.1f} kWh, Prod {totals.get('production_kwh', 0):.1f} kWh."
+        ),
+    )
+    for warning in parse_result.metadata.warnings:
+        messages.warning(request, warning)
+
+    return redirect("datasets")
 
 # New view for the global parameters page
 def global_parameter_list(request):
@@ -149,10 +225,10 @@ def project_create(request):
 
 def project_detail(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    members = project.members.all().prefetch_related("member_profiles__profile")
+    members = project.members.all().select_related("dataset")
     member_form = MemberForm()
-    member_profile_form = MemberProfileForm()
-    profiles = Profile.objects.filter(is_active=True).order_by("name")
+    member_form.fields["dataset"].queryset = Dataset.objects.all()
+    datasets = Dataset.objects.all()
     return render(
         request,
         "core/project_detail.html",
@@ -160,356 +236,46 @@ def project_detail(request, project_id):
             "project": project,
             "members": members,
             "member_form": member_form,
-            "member_profile_form": member_profile_form,
-            "profiles": profiles,
+            "datasets": datasets,
         },
     )
 
 @require_http_methods(["POST"])
 def member_create(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    data_mode = request.POST.get('data_mode')
-
-    if data_mode == 'timeseries_csv':
-        form = MemberForm(request.POST, request.FILES)
-        if not form.is_valid():
-            messages.error(request, f"Formulaire invalide : {form.errors.as_json()}")
-            return redirect("project_detail", project_id=project.id)
-
-        upload = form.cleaned_data.get("timeseries_file")
-        if not upload:
-            messages.error(request, "Veuillez sélectionner un fichier de données.")
-            return redirect("project_detail", project_id=project.id)
-
-        try:
-            parse_result = parse_member_timeseries(upload)
-        except TimeseriesError as exc:
-            messages.error(request, f"Import impossible : {exc}")
-            return redirect("project_detail", project_id=project.id)
-
-        metadata = asdict(parse_result.metadata)
-
-        member = Member(
-            project=project,
-            name=form.cleaned_data["name"],
-            utility=form.cleaned_data.get("utility", ""),
-            data_mode="timeseries_csv",
-            timeseries_metadata=metadata,
-        )
-        member.save()
-
-        upload.seek(0)
-        filename = upload.name or f"member_{member.id}.csv"
-        member.timeseries_file.save(filename, upload, save=True)
-
-        row_count = metadata.get("row_count")
-        total_conso = float(metadata.get("totals", {}).get("consumption_kwh", 0.0) or 0.0)
-        total_prod = float(metadata.get("totals", {}).get("production_kwh", 0.0) or 0.0)
-        messages.success(
-            request,
-            (
-                f"Le membre '{member.name}' a été ajouté. "
-                f"{row_count} lignes analysées — Consommation totale : {total_conso:.1f} kWh, "
-                f"Production totale : {total_prod:.1f} kWh."
-            ),
-        )
-
-        if parse_result.metadata.warnings:
-            for warning in parse_result.metadata.warnings:
-                messages.warning(request, warning)
-
+    form = MemberForm(request.POST)
+    form.fields["dataset"].queryset = Dataset.objects.all()
+    if not form.is_valid():
+        messages.error(request, f"Formulaire invalide : {form.errors.as_json()}")
         return redirect("project_detail", project_id=project.id)
 
-    elif data_mode == 'profile_based':
-        profile_ids = request.POST.getlist('profiles')
-        raw_annual_consumption = request.POST.get('annual_consumption_kwh')
-        raw_annual_production = request.POST.get('annual_production_kwh')
+    member = form.save(commit=False)
+    member.project = project
 
-        if not profile_ids:
-            messages.error(request, "Veuillez sélectionner au moins un profil.")
-            return redirect("project_detail", project_id=project_id)
+    metadata = {} if member.dataset.metadata is None else member.dataset.metadata
+    totals = metadata.get("totals") or {}
 
-        def _parse_optional(value, label):
-            if value is None:
-                return None
-            value = value.strip()
-            if value == "":
-                return None
-            try:
-                return float(value.replace(",", "."))
-            except (TypeError, ValueError):
-                messages.error(request, f"Valeur numérique invalide pour {label}.")
-                raise
+    if member.annual_consumption_kwh is None:
+        member.annual_consumption_kwh = _parse_float(totals.get("consumption_kwh"))
+    if member.annual_production_kwh is None:
+        member.annual_production_kwh = _parse_float(totals.get("production_kwh"))
 
-        try:
-            annual_prod_value = _parse_optional(raw_annual_production or "", "la production annuelle")
-        except Exception:
-            return redirect("project_detail", project_id=project_id)
+    member.save()
 
-        try:
-            annual_cons_value = _parse_optional(raw_annual_consumption or "", "la consommation annuelle")
-        except Exception:
-            return redirect("project_detail", project_id=project_id)
+    row_count = metadata.get("row_count") if isinstance(metadata, dict) else None
+    messages.success(
+        request,
+        (
+            f"Le membre '{member.name}' a été ajouté avec le dataset '{member.dataset.name}'. "
+            f"{row_count or '—'} lignes analysées."
+        ),
+    )
 
-        profiles = list(Profile.objects.filter(id__in=profile_ids))
-        if not profiles:
-            messages.error(request, "Aucun profil trouvé pour les identifiants sélectionnés.")
-            return redirect("project_detail", project_id=project_id)
+    for warning in metadata.get("warnings", []) if isinstance(metadata, dict) else []:
+        messages.warning(request, warning)
 
-        production_series = None
-        consumption_series = None
-        production_base_total = 0.0
-        consumption_base_total = 0.0
+    return redirect("project_detail", project_id=project.id)
 
-        def _resolve_profile_role(profile: Profile) -> tuple[str, bool]:
-            """Return the effective role for a profile and whether it required correction."""
-
-            role = (profile.profile_type or "").strip().lower()
-            if role not in {"production", "consumption"}:
-                role = ""
-
-            totals: dict[str, float] = {}
-            if isinstance(profile.metadata, dict):
-                totals = profile.metadata.get("totals") or {}
-
-            def _as_float(value) -> float:
-                try:
-                    return float(value)
-                except (TypeError, ValueError):
-                    return 0.0
-
-            prod_total = _as_float(totals.get("production_kwh"))
-            cons_total = _as_float(totals.get("consumption_kwh"))
-
-            corrected = False
-
-            if not role:
-                if prod_total > cons_total and prod_total > 0:
-                    role = "production"
-                    corrected = True
-                elif cons_total > 0:
-                    role = "consumption"
-                    corrected = True
-            elif role == "production" and prod_total == 0 and cons_total > 0:
-                role = "consumption"
-                corrected = True
-            elif role == "consumption" and cons_total == 0 and prod_total > 0:
-                role = "production"
-                corrected = True
-
-            if not role:
-                role = "consumption"
-
-            return role, corrected
-
-        for profile in profiles:
-            effective_role, corrected = _resolve_profile_role(profile)
-            profile_df = pd.DataFrame(profile.points)
-            if "timestamp" not in profile_df or "value_kwh" not in profile_df:
-                messages.error(request, f"Le profil {profile.name} ne contient pas de données exploitables.")
-                return redirect("project_detail", project_id=project_id)
-
-            profile_df["timestamp"] = pd.to_datetime(profile_df["timestamp"], errors='coerce')
-            profile_df = profile_df.dropna(subset=["timestamp"])
-            profile_df = profile_df.sort_values("timestamp")
-            profile_series = profile_df.set_index("timestamp")["value_kwh"].astype(float).fillna(0.0)
-
-            if effective_role == "production":
-                production_series = profile_series if production_series is None else production_series.add(profile_series, fill_value=0)
-                production_base_total += float(profile_series.sum())
-            else:
-                consumption_series = profile_series if consumption_series is None else consumption_series.add(profile_series, fill_value=0)
-                consumption_base_total += float(profile_series.sum())
-
-            if corrected:
-                human_role = "production" if effective_role == "production" else "consommation"
-                messages.warning(
-                    request,
-                    (
-                        f"Le profil {profile.name} a été traité comme {human_role} car ses totaux ne correspondaient pas "
-                        "au type déclaré."
-                    ),
-                )
-
-        if annual_prod_value is None and production_series is not None and production_base_total > 0:
-            annual_prod_value = production_base_total
-            formatted_prod = f"{annual_prod_value:,.0f}".replace(",", "\u00a0")
-            messages.info(
-                request,
-                f"Production annuelle non renseignée : utilisation de la somme des profils ({formatted_prod} kWh).",
-            )
-        if annual_cons_value is None and consumption_series is not None and consumption_base_total > 0:
-            annual_cons_value = consumption_base_total
-            formatted_cons = f"{annual_cons_value:,.0f}".replace(",", "\u00a0")
-            messages.info(
-                request,
-                f"Consommation annuelle non renseignée : utilisation de la somme des profils ({formatted_cons} kWh).",
-            )
-
-        if production_series is None and (annual_prod_value or 0) > 0:
-            messages.warning(request, "Aucun profil de production n'a été sélectionné alors qu'une production annuelle est renseignée.")
-        if consumption_series is None and (annual_cons_value or 0) > 0:
-            messages.warning(request, "Aucun profil de consommation n'a été sélectionné alors qu'une consommation annuelle est renseignée.")
-
-        all_index = None
-        if production_series is not None:
-            all_index = production_series.index if all_index is None else all_index.union(production_series.index)
-        if consumption_series is not None:
-            all_index = consumption_series.index if all_index is None else all_index.union(consumption_series.index)
-
-        if all_index is None:
-            messages.error(request, "Impossible de générer la série temporelle : aucune donnée de profil valide.")
-            return redirect("project_detail", project_id=project_id)
-
-        all_index = all_index.sort_values()
-        generated_df = pd.DataFrame(index=all_index)
-
-        if production_series is not None and (annual_prod_value or 0) > 0:
-            prod_sum = production_series.sum()
-            scale = (annual_prod_value or 0.0) / prod_sum if prod_sum else 0.0
-            generated_df["Production"] = production_series.reindex(all_index, fill_value=0) * scale
-        else:
-            generated_df["Production"] = 0.0
-
-        if consumption_series is not None and (annual_cons_value or 0) > 0:
-            cons_sum = consumption_series.sum()
-            scale = (annual_cons_value or 0.0) / cons_sum if cons_sum else 0.0
-            generated_df["Consommation"] = consumption_series.reindex(all_index, fill_value=0) * scale
-        else:
-            generated_df["Consommation"] = 0.0
-
-        generated_df = generated_df.fillna(0.0)
-        generated_df.reset_index(inplace=True)
-        generated_df.rename(columns={"index": "Timestamp"}, inplace=True)
-
-        metadata_input = generated_df.rename(
-            columns={
-                "Timestamp": "timestamp",
-                "Production": "production_kwh",
-                "Consommation": "consumption_kwh",
-            }
-        )
-        metadata = asdict(
-            build_metadata(
-                metadata_input,
-                {
-                    "timestamp": "timestamp",
-                    "production": "production_kwh",
-                    "consumption": "consumption_kwh",
-                },
-                file_type="generated_from_profiles",
-            )
-        )
-
-        price_default = Member._meta.get_field("current_unit_price_eur_per_kwh").default
-        fixed_default = Member._meta.get_field("current_fixed_fee_eur").default
-        inj_qty_default = Member._meta.get_field("injection_annual_kwh").default
-        inj_price_default = Member._meta.get_field("injection_unit_price_eur_per_kwh").default
-
-        member = Member(
-            project=project,
-            name=request.POST.get('name'),
-            utility=request.POST.get('utility', ''),
-            data_mode='timeseries_csv',
-            annual_consumption_kwh=annual_cons_value if annual_cons_value is not None else None,
-            annual_production_kwh=annual_prod_value if annual_prod_value is not None else None,
-            timeseries_metadata=metadata,
-            current_unit_price_eur_per_kwh=_parse_float(
-                request.POST.get('current_unit_price_eur_per_kwh'), price_default
-            ),
-            current_fixed_fee_eur=_parse_float(
-                request.POST.get('current_fixed_fee_eur'), fixed_default
-            ),
-            injection_annual_kwh=_parse_float(
-                request.POST.get('injection_annual_kwh'), inj_qty_default
-            ),
-            injection_unit_price_eur_per_kwh=_parse_float(
-                request.POST.get('injection_unit_price_eur_per_kwh'), inj_price_default
-            ),
-        )
-        member.save()
-
-        output = io.StringIO()
-        generated_df.to_csv(output, index=False)
-        csv_file = ContentFile(output.getvalue().encode('utf-8'))
-        member.timeseries_file.save(f"generated_{member.id}.csv", csv_file, save=True)
-
-        try:
-            regenerated = parse_member_timeseries(member.timeseries_file.path)
-            member.timeseries_metadata = asdict(regenerated.metadata)
-            totals = regenerated.metadata.totals
-            if member.annual_consumption_kwh is None and totals.get('consumption_kwh'):
-                member.annual_consumption_kwh = totals.get('consumption_kwh')
-            if member.annual_production_kwh is None and totals.get('production_kwh'):
-                member.annual_production_kwh = totals.get('production_kwh')
-            member.save()
-        except TimeseriesError as exc:
-            messages.warning(request, f"Le fichier généré n'a pas pu être relu pour vérifier les totaux : {exc}")
-
-        messages.success(
-            request,
-            f"Le membre '{member.name}' a été créé avec un profil annualisé ({metadata.get('row_count')} points).",
-        )
-
-        return redirect("project_detail", project_id=project.id)
-
-
-    return HttpResponseBadRequest("Mode de données non valide.")
-
-
-
-@require_http_methods(["POST"])
-def profile_create(request):
-    form = ProfileForm(request.POST, request.FILES)
-    if form.is_valid():
-        upload = form.cleaned_data["profile_csv"]
-        profile_type = form.cleaned_data["profile_type"]
-
-        try:
-            parse_result = parse_profile_timeseries(upload, profile_type)
-        except TimeseriesError as exc:
-            messages.error(request, f"Import impossible : {exc}")
-            return redirect("profiles")
-
-        df = parse_result.data.copy()
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors='coerce')
-        df = df.dropna(subset=["timestamp"])
-        df = df.sort_values("timestamp")
-
-        points = [
-            {"timestamp": ts.isoformat(), "value_kwh": float(val)}
-            for ts, val in zip(df["timestamp"], df["value_kwh"])
-        ]
-
-        prof = Profile(
-            name=form.cleaned_data["name"],
-            profile_type=profile_type,
-            points=points,
-            metadata=asdict(parse_result.metadata),
-        )
-
-        # Build a downsampled daily plot for preview
-        daily_series = df.set_index("timestamp")["value_kwh"].resample("D").sum()
-        plt.figure(figsize=(12, 4))
-        plt.plot(daily_series.index, daily_series.values, label=profile_type.capitalize())
-        plt.xlabel('Date')
-        plt.ylabel('Énergie (kWh)')
-        plt.title(f'Profil {prof.name} – cumul quotidien')
-        plt.tight_layout()
-
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png')
-        plt.close()
-        buf.seek(0)
-
-        prof.graph.save(f'{prof.name}.png', ContentFile(buf.read()), save=False)
-        buf.close()
-
-        prof.save()
-        messages.success(request, f"Profil '{prof.name}' importé ({parse_result.metadata.row_count} points).")
-        return redirect("profiles")
-    messages.error(request, "Formulaire de profil invalide.")
-    return redirect("profiles")
 
 @require_http_methods(["POST"])
 def global_parameter_create(request):
@@ -523,34 +289,36 @@ def csv_template_timeseries(request):
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="timeseries_template.csv"'
     writer = csv.writer(response)
-    writer.writerow(["Date+Quart time", "consumption", "injection", "label"])
+    writer.writerow(["Date+Quart time", "consumption", "injection"])
 
     base = datetime(2024, 1, 1, 0, 0)
     step = timedelta(minutes=15)
     for _ in range(8):
-        writer.writerow([base.strftime("%Y-%m-%d %H:%M"), "", "", "Exemple"])
+        writer.writerow([base.strftime("%Y-%m-%d %H:%M"), "", ""])
         base += step
-    writer.writerow(["...", "", "", ""])
-    writer.writerow(["(35 040 lignes sur une année complète)", "", "", ""])
+    writer.writerow(["...", "", ""])
+    writer.writerow(["(35 040 lignes sur une année complète)", "", ""])
     return response
 
 def project_analysis_page(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    members = project.members.filter(data_mode='timeseries_csv').exclude(timeseries_file='')
+    members = project.members.select_related("dataset")
 
     if not members.exists():
-        messages.warning(request, "Aucun membre avec un fichier de données n'a été trouvé pour l'analyse.")
+        messages.warning(request, "Aucun membre avec un dataset n'a été trouvé pour l'analyse.")
         return redirect("project_detail", project_id=project.id)
 
     combined_frames = []
     member_stats = []
 
     for member in members:
-        if not member.timeseries_file:
+        dataset = getattr(member, "dataset", None)
+        if not dataset or not dataset.normalized_file:
+            messages.warning(request, f"{member.name} : dataset incomplet ou sans fichier normalisé.")
             continue
         try:
-            parse_result = parse_member_timeseries(member.timeseries_file.path)
-        except TimeseriesError as exc:
+            parse_result = parse_member_timeseries(dataset.normalized_file.path)
+        except (TimeseriesError, FileNotFoundError) as exc:
             messages.error(request, f"{member.name} : {exc}")
             continue
 
@@ -560,7 +328,7 @@ def project_analysis_page(request, project_id):
         df['member'] = member.name
         combined_frames.append(df)
 
-        metadata_dict = asdict(parse_result.metadata)
+        metadata_dict = dataset.metadata or asdict(parse_result.metadata)
         total_production = float(df['production_kwh'].sum())
         total_consumption = float(df['consumption_kwh'].sum())
 
@@ -572,10 +340,6 @@ def project_analysis_page(request, project_id):
             metadata_dict['start'] = df['timestamp'].min().isoformat()
         if not metadata_dict.get('end') and not df['timestamp'].empty:
             metadata_dict['end'] = df['timestamp'].max().isoformat()
-        if not metadata_dict.get('normalized_year') and not df['timestamp'].empty:
-            year_mode = df['timestamp'].dt.year.mode()
-            if not year_mode.empty:
-                metadata_dict['normalized_year'] = int(year_mode.iloc[0])
 
         member_stats.append({
             'member': member,
@@ -595,117 +359,58 @@ def project_analysis_page(request, project_id):
 
     totals_by_instant = combined_df.groupby('timestamp')[['production_kwh', 'consumption_kwh']].sum()
     totals_by_instant.index = pd.to_datetime(totals_by_instant.index)
+    totals_by_instant = totals_by_instant.sort_index()
 
-    total_production = float(totals_by_instant['production_kwh'].sum())
-    total_consumption = float(totals_by_instant['consumption_kwh'].sum())
-    net_series = (totals_by_instant['production_kwh'] - totals_by_instant['consumption_kwh']).tolist()
+    totals_by_month = combined_df.copy()
+    totals_by_month['month'] = totals_by_month['timestamp'].dt.month
+    totals_by_month = totals_by_month.groupby('month')[['production_kwh', 'consumption_kwh']].sum()
 
-    kpis = {
-        'total_production': total_production,
-        'total_consumption': total_consumption,
-        'net_surplus': float(sum(net_series)),
-        'peak_production': float(totals_by_instant['production_kwh'].max()),
-        'peak_consumption': float(totals_by_instant['consumption_kwh'].max()),
-        'autonomy_coverage': (total_production / total_consumption * 100) if total_consumption > 0 else 0,
-    }
+    member_totals = combined_df.groupby('member')[['production_kwh', 'consumption_kwh']].sum()
+    member_totals = member_totals.reset_index().sort_values('member')
 
-    monthly_totals = totals_by_instant.resample('M').sum()
-    monthly_categories = [dt.strftime('%Y-%m') for dt in monthly_totals.index]
-    monthly_series = {
-        'production': monthly_totals['production_kwh'].round(2).tolist(),
-        'consumption': monthly_totals['consumption_kwh'].round(2).tolist(),
-        'net': (monthly_totals['production_kwh'] - monthly_totals['consumption_kwh']).round(2).tolist(),
-    }
+    total_production_all = float(totals_by_instant['production_kwh'].sum())
+    total_consumption_all = float(totals_by_instant['consumption_kwh'].sum())
 
-    daily_totals = totals_by_instant.resample('D').sum()
-    recent_daily = daily_totals.tail(31)
-    daily_categories = [dt.strftime('%Y-%m-%d') for dt in recent_daily.index]
-    daily_series = {
-        'production': recent_daily['production_kwh'].round(2).tolist(),
-        'consumption': recent_daily['consumption_kwh'].round(2).tolist(),
-    }
+    avg_profile = combined_df.copy()
+    avg_profile['hour'] = avg_profile['timestamp'].dt.hour + avg_profile['timestamp'].dt.minute / 60
+    avg_profile = avg_profile.groupby('hour')[['production_kwh', 'consumption_kwh']].mean().reset_index()
 
-    monthly_daily_detail = []
-    if not daily_totals.empty:
-        grouped = daily_totals.groupby(daily_totals.index.to_period('M'))
-        for period, month_df in grouped:
-            monthly_daily_detail.append(
-                {
-                    'label': period.strftime('%Y-%m'),
-                    'categories': [dt.strftime('%Y-%m-%d') for dt in month_df.index],
-                    'production': month_df['production_kwh'].round(2).tolist(),
-                    'consumption': month_df['consumption_kwh'].round(2).tolist(),
-                    'net': (month_df['production_kwh'] - month_df['consumption_kwh']).round(2).tolist(),
-                }
-            )
-
-    avg_profile = totals_by_instant.groupby(totals_by_instant.index.time).mean()
-    avg_profile_index = [time.strftime('%H:%M') for time in avg_profile.index]
+    avg_profile_categories = [f"{hour:.2f}" for hour in avg_profile['hour']]
     avg_profile_series = {
-        'production': avg_profile['production_kwh'].round(3).tolist(),
-        'consumption': avg_profile['consumption_kwh'].round(3).tolist(),
+        'production': [round(val, 3) for val in avg_profile['production_kwh']],
+        'consumption': [round(val, 3) for val in avg_profile['consumption_kwh']],
     }
 
-    total_metadata_df = totals_by_instant.reset_index().rename(
-        columns={
-            'timestamp': 'timestamp',
-            'production_kwh': 'production_kwh',
-            'consumption_kwh': 'consumption_kwh',
-        }
-    )
-    aggregate_metadata = asdict(
-        build_metadata(
-            total_metadata_df,
-            {'timestamp': 'timestamp', 'production': 'production_kwh', 'consumption': 'consumption_kwh'},
-            file_type='project_aggregate',
-        )
+    member_stats_sorted = sorted(
+        member_stats,
+        key=lambda item: item['metadata'].get('totals', {}).get('consumption_kwh', 0),
+        reverse=True,
     )
 
-    normalized_years = [
-        item['metadata'].get('normalized_year')
-        for item in member_stats
-        if item.get('metadata') and item['metadata'].get('normalized_year') is not None
-    ]
-    if normalized_years:
-        # Prefer the most common year among members for the aggregate summary.
-        aggregate_metadata['normalized_year'] = max(set(normalized_years), key=normalized_years.count)
-
-    top_producers = sorted(member_stats, key=lambda x: x['total_production'], reverse=True)[:5]
-    top_consumers = sorted(member_stats, key=lambda x: x['total_consumption'], reverse=True)[:5]
-
-    pie_producers = {
-        'labels': [item['member'].name for item in top_producers if item['total_production'] > 0],
-        'data': [item['total_production'] for item in top_producers if item['total_production'] > 0],
-    }
-    pie_consumers = {
-        'labels': [item['member'].name for item in top_consumers if item['total_consumption'] > 0],
-        'data': [item['total_consumption'] for item in top_consumers if item['total_consumption'] > 0],
-    }
-
-    context = {
-        'project': project,
-        'kpis': kpis,
-        'member_stats': member_stats,
-        'monthly_categories': json.dumps(monthly_categories),
-        'monthly_series': json.dumps(monthly_series),
-        'daily_categories': json.dumps(daily_categories),
-        'daily_series': json.dumps(daily_series),
-        'monthly_detail': json.dumps(monthly_daily_detail),
-        'avg_profile_categories': json.dumps(avg_profile_index),
-        'avg_profile_series': json.dumps(avg_profile_series),
-        'aggregate_metadata': aggregate_metadata,
-        'pie_producers': json.dumps(pie_producers),
-        'pie_consumers': json.dumps(pie_consumers),
-    }
-
-    return render(request, "core/project_analysis.html", context)
+    return render(
+        request,
+        "core/project_analysis.html",
+        {
+            "project": project,
+            "member_stats": member_stats_sorted,
+            "totals_by_instant": totals_by_instant.to_dict(orient="records"),
+            "totals_by_month": totals_by_month.to_dict(orient="index"),
+            "member_totals": member_totals.to_dict(orient="records"),
+            "total_production_all": total_production_all,
+            "total_consumption_all": total_consumption_all,
+            "avg_profile_categories": avg_profile_categories,
+            "avg_profile_series": avg_profile_series,
+        },
+    )
 
 
 def project_stage2(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     all_members = list(project.members.all().order_by("name"))
-    members_with_series = [member for member in all_members if member.timeseries_file]
-    missing_members = [member for member in all_members if not member.timeseries_file]
+    members_with_series = [
+        member for member in all_members if getattr(member, "dataset", None) and member.dataset.normalized_file
+    ]
+    missing_members = [member for member in all_members if member not in members_with_series]
 
     scenario_form = StageTwoScenarioForm(
         request.POST or None,
@@ -826,7 +531,9 @@ def stage2_scenario_csv(request, scenario_id):
     scenario = get_object_or_404(StageTwoScenario, pk=scenario_id)
     project = scenario.project
     members = list(project.members.all().order_by("name"))
-    members_with_series = [member for member in members if member.timeseries_file]
+    members_with_series = [
+        member for member in members if getattr(member, "dataset", None) and member.dataset.normalized_file
+    ]
 
     if not members_with_series:
         messages.error(request, "Aucun membre ne possède de série temporelle exploitable.")

@@ -2,8 +2,7 @@ from django import forms
 from .models import (
     Project,
     Member,
-    MemberProfile,
-    Profile,
+    Dataset,
     GlobalParameter,
     StageTwoScenario,
     StageThreeScenario,
@@ -18,10 +17,9 @@ class MemberForm(forms.ModelForm):
     class Meta:
         model = Member
         fields = [
+            "dataset",
             "name",
             "utility",
-            "data_mode",
-            "timeseries_file",
             "annual_consumption_kwh",
             "annual_production_kwh",
             "current_unit_price_eur_per_kwh",
@@ -29,18 +27,12 @@ class MemberForm(forms.ModelForm):
             "injection_annual_kwh",
             "injection_unit_price_eur_per_kwh",
         ]
-
-class MemberProfileForm(forms.ModelForm):
-    class Meta:
-        model = MemberProfile
-        fields = ["profile"]
-
-class ProfileForm(forms.ModelForm):
-    profile_csv = forms.FileField()
+class DatasetForm(forms.ModelForm):
+    tags = forms.CharField(required=False, help_text="Séparez les tags par des virgules")
 
     class Meta:
-        model = Profile
-        fields = ["name", "profile_type", "profile_csv"]
+        model = Dataset
+        fields = ["name", "tags", "source_file"]
 
 class GlobalParameterForm(forms.ModelForm):
     class Meta:

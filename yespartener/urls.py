@@ -45,12 +45,12 @@ urlpatterns = [
     ),
 
     # New dedicated pages
-    path("profiles/", v.profile_list, name="profiles"),
+    path("datasets/", v.dataset_list, name="datasets"),
+    path("datasets/create/", v.dataset_create, name="dataset_create"),
     path("global-parameters/", v.global_parameter_list, name="global_parameters"),
     path("ingestion-templates/", v.template_helper, name="template_helper"),
 
     # Keep create views, but they will redirect differently
-    path("profiles/create/", v.profile_create, name="profile_create"),
     path("global-params/create/", v.global_parameter_create, name="global_parameter_create"),
 
     # CSV template

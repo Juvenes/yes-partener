@@ -59,12 +59,13 @@ def load_project_timeseries(members: Sequence) -> Tuple[pd.DataFrame, List[str]]
     timestamps: set = set()
 
     for member in members:
-        if not getattr(member, "timeseries_file", None):
-            warnings.append(_("%(member)s : aucun fichier de série temporelle n'est associé.") % {"member": member.name})
+        dataset = getattr(member, "dataset", None)
+        if not dataset or not getattr(dataset, "normalized_file", None):
+            warnings.append(_("%(member)s : aucun dataset normalisé n'est associé.") % {"member": member.name})
             continue
 
         try:
-            parse_result = parse_member_timeseries(member.timeseries_file.path)
+            parse_result = parse_member_timeseries(dataset.normalized_file.path)
         except (TimeseriesError, FileNotFoundError) as exc:
             warnings.append(f"{member.name} : {exc}")
             continue
