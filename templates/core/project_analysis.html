@@ -106,18 +106,24 @@
         <h2>Exploration détaillée par mois</h2>
         <select id="month-select" class="input-select"></select>
       </div>
-      <p style="color: #6b7c93; margin: 0.75rem 0 1.5rem;">Sélectionnez un mois pour visualiser la production et la consommation journalières sans charger l'ensemble de l'année.</p>
-      <div id="monthly-detail-chart"></div>
+      <p style="color: #6b7c93; margin: 0.75rem 0 1.5rem;">Choisissez un mois pour visualiser toutes les séries par membre, les injections, les consommations et le solde net.</p>
+      <div class="chart-grid" style="margin-bottom: 1.5rem;">
+        <div id="month-production-chart" class="card" style="box-shadow:none;border:1px solid #eef2ff;"></div>
+        <div id="month-consumption-chart" class="card" style="box-shadow:none;border:1px solid #eef2ff;"></div>
+      </div>
+      <div id="month-balance-chart"></div>
     </div>
 
     <div class="chart-grid">
       <div class="card">
-        <h2>30 derniers jours</h2>
-        <div id="daily-chart"></div>
-      </div>
-      <div class="card">
         <h2>Profil moyen sur 24h</h2>
         <div id="avg-chart"></div>
+      </div>
+      <div class="card">
+        <h2>Vue hebdomadaire (année complète)</h2>
+        <div id="weekly-balance"></div>
+        <div id="weekly-production"></div>
+        <div id="weekly-consumption"></div>
       </div>
     </div>
 
@@ -170,11 +176,13 @@
   <script>
     const monthlyCategories = {{ monthly_categories|safe }};
     const monthlySeries = {{ monthly_series|safe }};
-    const dailyCategories = {{ daily_categories|safe }};
-    const dailySeries = {{ daily_series|safe }};
     const monthlyDetail = {{ monthly_detail|default:'[]'|safe }};
     const avgProfileCategories = {{ avg_profile_categories|safe }};
     const avgProfileSeries = {{ avg_profile_series|safe }};
+    const weeklyCategories = {{ weekly_categories|default:'[]'|safe }};
+    const weeklyTotals = {{ weekly_totals|default:'{}'|safe }};
+    const weeklyMemberProduction = {{ weekly_member_production|default:'[]'|safe }};
+    const weeklyMemberConsumption = {{ weekly_member_consumption|default:'[]'|safe }};
     const pieProducers = {{ pie_producers|safe }};
     const pieConsumers = {{ pie_consumers|safe }};
 
@@ -193,52 +201,73 @@
     });
     monthlyChart.render();
 
-    const dailyChart = new ApexCharts(document.querySelector('#daily-chart'), {
-      series: [
-        { name: 'Production', data: dailySeries.production },
-        { name: 'Consommation', data: dailySeries.consumption }
-      ],
-      chart: { type: 'line', height: 360, zoom: { enabled: true } },
-      stroke: { curve: 'smooth', width: 3 },
-      xaxis: { categories: dailyCategories },
-      dataLabels: { enabled: false },
-      tooltip: { shared: true }
-    });
-    dailyChart.render();
-
     const monthSelect = document.querySelector('#month-select');
-    const monthChartContainer = document.querySelector('#monthly-detail-chart');
-    let monthChart = null;
+    const monthProdContainer = document.querySelector('#month-production-chart');
+    const monthConsContainer = document.querySelector('#month-consumption-chart');
+    const monthBalanceContainer = document.querySelector('#month-balance-chart');
+    let monthProdChart = null;
+    let monthConsChart = null;
+    let monthBalanceChart = null;
+
+    function clearContainers(message) {
+      monthProdContainer.innerHTML = message;
+      monthConsContainer.innerHTML = '';
+      monthBalanceContainer.innerHTML = '';
+    }
 
     function renderMonthChart(index) {
       if (!monthlyDetail.length) {
-        monthChartContainer.innerHTML = '<p class="muted">Aucune donnée détaillée disponible.</p>';
+        clearContainers('<p class="muted">Aucune donnée détaillée disponible.</p>');
         monthSelect.disabled = true;
         return;
       }
 
       const monthData = monthlyDetail[index] || monthlyDetail[0];
       if (!monthData) {
-        monthChartContainer.innerHTML = '<p class="muted">Données indisponibles pour ce mois.</p>';
+        clearContainers('<p class="muted">Données indisponibles pour ce mois.</p>');
         return;
       }
 
       monthSelect.value = String(index);
 
-      if (monthChart) {
-        monthChart.destroy();
-      }
+      [monthProdChart, monthConsChart, monthBalanceChart].forEach((chart) => {
+        if (chart) chart.destroy();
+      });
 
-      monthChart = new ApexCharts(monthChartContainer, {
+      const stackedOptions = (title, series) => ({
+        series,
+        chart: { type: 'area', height: 360, stacked: true, toolbar: { show: false } },
+        title: { text: title },
+        dataLabels: { enabled: false },
+        stroke: { curve: 'smooth', width: 2 },
+        xaxis: { categories: monthData.categories, labels: { rotate: -35 } },
+        yaxis: { title: { text: 'kWh' } },
+        tooltip: { shared: true },
+        fill: { opacity: 0.8 }
+      });
+
+      monthProdChart = new ApexCharts(
+        monthProdContainer,
+        stackedOptions('Production quotidienne par membre', monthData.production_series)
+      );
+      monthProdChart.render();
+
+      monthConsChart = new ApexCharts(
+        monthConsContainer,
+        stackedOptions('Consommation quotidienne par membre', monthData.consumption_series)
+      );
+      monthConsChart.render();
+
+      monthBalanceChart = new ApexCharts(monthBalanceContainer, {
         series: [
-          { name: 'Production', type: 'line', data: monthData.production },
-          { name: 'Consommation', type: 'line', data: monthData.consumption },
-          { name: 'Solde net', type: 'column', data: monthData.net }
+          { name: 'Production totale', type: 'column', data: monthData.totals.production },
+          { name: 'Consommation totale', type: 'column', data: monthData.totals.consumption },
+          { name: 'Solde net', type: 'line', data: monthData.totals.net }
         ],
-        chart: { type: 'line', height: 420, stacked: false, zoom: { enabled: false } },
-        stroke: { curve: 'smooth', width: [3, 3, 0] },
-        plotOptions: { bar: { columnWidth: '45%' } },
-        fill: { opacity: [0.9, 0.9, 0.3] },
+        chart: { type: 'line', height: 420, stacked: false, zoom: { enabled: false }, toolbar: { show: false } },
+        stroke: { curve: 'smooth', width: [0, 0, 3] },
+        plotOptions: { bar: { columnWidth: '55%' } },
+        fill: { opacity: [0.85, 0.85, 0.3] },
         xaxis: {
           categories: monthData.categories,
           tickAmount: Math.min(12, monthData.categories.length),
@@ -248,7 +277,7 @@
         dataLabels: { enabled: false },
         tooltip: { shared: true }
       });
-      monthChart.render();
+      monthBalanceChart.render();
     }
 
     function populateMonthSelect() {
@@ -283,6 +312,48 @@
       tooltip: { shared: true, y: { formatter: (val) => `${val.toFixed(2)} kWh` } }
     });
     avgChart.render();
+
+    const weeklyBalance = new ApexCharts(document.querySelector('#weekly-balance'), {
+      series: [
+        { name: 'Production', type: 'column', data: weeklyTotals.production || [] },
+        { name: 'Consommation', type: 'column', data: weeklyTotals.consumption || [] },
+        { name: 'Solde net', type: 'line', data: weeklyTotals.net || [] }
+      ],
+      chart: { type: 'line', height: 360, stacked: false, toolbar: { show: false } },
+      stroke: { width: [0, 0, 3], curve: 'smooth' },
+      plotOptions: { bar: { columnWidth: '50%' } },
+      dataLabels: { enabled: false },
+      xaxis: { categories: weeklyCategories, title: { text: 'Semaine (ISO)' } },
+      yaxis: [{ title: { text: 'kWh' } }],
+      tooltip: { shared: true }
+    });
+    weeklyBalance.render();
+
+    const weeklyProd = new ApexCharts(document.querySelector('#weekly-production'), {
+      series: weeklyMemberProduction,
+      chart: { type: 'area', stacked: true, height: 280, toolbar: { show: false } },
+      title: { text: 'Production hebdomadaire par membre' },
+      dataLabels: { enabled: false },
+      stroke: { curve: 'smooth', width: 2 },
+      xaxis: { categories: weeklyCategories, title: { text: 'Semaine (ISO)' } },
+      yaxis: { title: { text: 'kWh' } },
+      tooltip: { shared: true },
+      fill: { opacity: 0.8 }
+    });
+    weeklyProd.render();
+
+    const weeklyCons = new ApexCharts(document.querySelector('#weekly-consumption'), {
+      series: weeklyMemberConsumption,
+      chart: { type: 'area', stacked: true, height: 280, toolbar: { show: false } },
+      title: { text: 'Consommation hebdomadaire par membre' },
+      dataLabels: { enabled: false },
+      stroke: { curve: 'smooth', width: 2 },
+      xaxis: { categories: weeklyCategories, title: { text: 'Semaine (ISO)' } },
+      yaxis: { title: { text: 'kWh' } },
+      tooltip: { shared: true },
+      fill: { opacity: 0.8 }
+    });
+    weeklyCons.render();
 
     const safePie = (data, placeholder) => {
       if (!data.data || data.data.length === 0) {

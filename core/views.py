@@ -45,6 +45,7 @@ from .timeseries import (
     parse_member_timeseries,
     _normalise_to_reference_year,
 )
+import calendar
 import csv
 from datetime import datetime, timedelta
 import json
@@ -386,16 +387,6 @@ def project_analysis_page(request, project_id):
         'consumption': [round(val, 3) for val in avg_profile['consumption_kwh']],
     }
 
-    daily_totals = combined_df.copy()
-    daily_totals['day'] = daily_totals['timestamp'].dt.date
-    daily_totals = daily_totals.groupby('day')[['production_kwh', 'consumption_kwh']].sum().sort_index()
-    recent_daily = daily_totals.tail(30)
-    daily_categories = [day.strftime('%Y-%m-%d') for day in recent_daily.index]
-    daily_series = {
-        'production': [round(val, 2) for val in recent_daily['production_kwh']],
-        'consumption': [round(val, 2) for val in recent_daily['consumption_kwh']],
-    }
-
     monthly_categories = [f"{int(month):02d}" for month in totals_by_month.index]
     monthly_series = {
         'production': [round(val, 1) for val in totals_by_month['production_kwh']],
@@ -405,16 +396,73 @@ def project_analysis_page(request, project_id):
 
     monthly_detail = []
     for month, month_df in combined_df.groupby(combined_df['timestamp'].dt.month):
-        by_day = month_df.groupby(month_df['timestamp'].dt.day)[['production_kwh', 'consumption_kwh']].sum().sort_index()
+        days = sorted(month_df['timestamp'].dt.day.unique())
+        by_day = month_df.groupby(month_df['timestamp'].dt.day)[['production_kwh', 'consumption_kwh']].sum().reindex(days, fill_value=0)
+
+        production_series = []
+        consumption_series = []
+
+        for member_name, member_df in month_df.groupby('member'):
+            member_day = (
+                member_df.groupby(member_df['timestamp'].dt.day)[['production_kwh', 'consumption_kwh']]
+                .sum()
+                .reindex(days, fill_value=0)
+            )
+            production_series.append({
+                'name': member_name,
+                'data': [round(val, 2) for val in member_day['production_kwh']],
+            })
+            consumption_series.append({
+                'name': member_name,
+                'data': [round(val, 2) for val in member_day['consumption_kwh']],
+            })
+
+        totals_production = [round(val, 2) for val in by_day['production_kwh']]
+        totals_consumption = [round(val, 2) for val in by_day['consumption_kwh']]
+
         monthly_detail.append({
             'month': f"{int(month):02d}",
+            'label': calendar.month_name[int(month)] or f"Mois {int(month):02d}",
             'categories': [int(day) for day in by_day.index],
-            'series': {
-                'production': [round(val, 2) for val in by_day['production_kwh']],
-                'consumption': [round(val, 2) for val in by_day['consumption_kwh']],
+            'production_series': production_series,
+            'consumption_series': consumption_series,
+            'totals': {
+                'production': totals_production,
+                'consumption': totals_consumption,
+                'net': [round(p - c, 2) for p, c in zip(totals_production, totals_consumption)],
             },
         })
     monthly_detail.sort(key=lambda item: item['month'])
+
+    combined_df['week'] = combined_df['timestamp'].dt.isocalendar().week.astype(int)
+    weeks = sorted(combined_df['week'].unique())
+    weekly_totals_df = (
+        combined_df.groupby('week')[['production_kwh', 'consumption_kwh']]
+        .sum()
+        .reindex(weeks, fill_value=0)
+    )
+    weekly_totals = {
+        'production': [round(val, 2) for val in weekly_totals_df['production_kwh']],
+        'consumption': [round(val, 2) for val in weekly_totals_df['consumption_kwh']],
+        'net': [round(p - c, 2) for p, c in zip(weekly_totals_df['production_kwh'], weekly_totals_df['consumption_kwh'])],
+    }
+
+    weekly_member_production = []
+    weekly_member_consumption = []
+    for member_name, member_df in combined_df.groupby('member'):
+        member_weekly = (
+            member_df.groupby('week')[['production_kwh', 'consumption_kwh']]
+            .sum()
+            .reindex(weeks, fill_value=0)
+        )
+        weekly_member_production.append({
+            'name': member_name,
+            'data': [round(val, 2) for val in member_weekly['production_kwh']],
+        })
+        weekly_member_consumption.append({
+            'name': member_name,
+            'data': [round(val, 2) for val in member_weekly['consumption_kwh']],
+        })
 
     pie_producers = [
         {'name': row['member'], 'y': round(row['production_kwh'], 2)}
@@ -460,11 +508,13 @@ def project_analysis_page(request, project_id):
             "total_consumption_all": total_consumption_all,
             "avg_profile_categories": avg_profile_categories,
             "avg_profile_series": avg_profile_series,
-            "daily_categories": daily_categories,
-            "daily_series": daily_series,
             "monthly_categories": monthly_categories,
             "monthly_series": monthly_series,
             "monthly_detail": monthly_detail,
+            "weekly_categories": [int(week) for week in weeks],
+            "weekly_totals": weekly_totals,
+            "weekly_member_production": weekly_member_production,
+            "weekly_member_consumption": weekly_member_consumption,
             "pie_producers": pie_producers,
             "pie_consumers": pie_consumers,
             "kpis": kpis,
