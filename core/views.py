@@ -39,8 +39,11 @@ from .stage3 import (
 )
 from .timeseries import (
     TimeseriesError,
+    attach_calendar_index,
     build_indexed_template,
+    build_metadata,
     parse_member_timeseries,
+    _normalise_to_reference_year,
 )
 import csv
 from datetime import datetime, timedelta
@@ -355,15 +358,17 @@ def project_analysis_page(request, project_id):
     combined_df = pd.concat(combined_frames, ignore_index=True)
     combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], errors='coerce')
     combined_df = combined_df.dropna(subset=['timestamp'])
-    combined_df = combined_df.sort_values('timestamp')
+
+    normalized_ts, normalized_year = _normalise_to_reference_year(combined_df['timestamp'])
+    combined_df['timestamp'] = normalized_ts
+    combined_df = attach_calendar_index(combined_df)
+    combined_df = combined_df.sort_values(['timestamp', 'member'])
 
     totals_by_instant = combined_df.groupby('timestamp')[['production_kwh', 'consumption_kwh']].sum()
     totals_by_instant.index = pd.to_datetime(totals_by_instant.index)
     totals_by_instant = totals_by_instant.sort_index()
 
-    totals_by_month = combined_df.copy()
-    totals_by_month['month'] = totals_by_month['timestamp'].dt.month
-    totals_by_month = totals_by_month.groupby('month')[['production_kwh', 'consumption_kwh']].sum()
+    totals_by_month = combined_df.groupby(combined_df['timestamp'].dt.month)[['production_kwh', 'consumption_kwh']].sum().sort_index()
 
     member_totals = combined_df.groupby('member')[['production_kwh', 'consumption_kwh']].sum()
     member_totals = member_totals.reset_index().sort_values('member')
@@ -381,6 +386,60 @@ def project_analysis_page(request, project_id):
         'consumption': [round(val, 3) for val in avg_profile['consumption_kwh']],
     }
 
+    daily_totals = combined_df.copy()
+    daily_totals['day'] = daily_totals['timestamp'].dt.date
+    daily_totals = daily_totals.groupby('day')[['production_kwh', 'consumption_kwh']].sum().sort_index()
+    recent_daily = daily_totals.tail(30)
+    daily_categories = [day.strftime('%Y-%m-%d') for day in recent_daily.index]
+    daily_series = {
+        'production': [round(val, 2) for val in recent_daily['production_kwh']],
+        'consumption': [round(val, 2) for val in recent_daily['consumption_kwh']],
+    }
+
+    monthly_categories = [f"{int(month):02d}" for month in totals_by_month.index]
+    monthly_series = {
+        'production': [round(val, 1) for val in totals_by_month['production_kwh']],
+        'consumption': [round(val, 1) for val in totals_by_month['consumption_kwh']],
+        'net': [round(p - c, 1) for p, c in zip(totals_by_month['production_kwh'], totals_by_month['consumption_kwh'])],
+    }
+
+    monthly_detail = []
+    for month, month_df in combined_df.groupby(combined_df['timestamp'].dt.month):
+        by_day = month_df.groupby(month_df['timestamp'].dt.day)[['production_kwh', 'consumption_kwh']].sum().sort_index()
+        monthly_detail.append({
+            'month': f"{int(month):02d}",
+            'categories': [int(day) for day in by_day.index],
+            'series': {
+                'production': [round(val, 2) for val in by_day['production_kwh']],
+                'consumption': [round(val, 2) for val in by_day['consumption_kwh']],
+            },
+        })
+    monthly_detail.sort(key=lambda item: item['month'])
+
+    pie_producers = [
+        {'name': row['member'], 'y': round(row['production_kwh'], 2)}
+        for _, row in member_totals.sort_values('production_kwh', ascending=False).head(5).iterrows()
+    ]
+    pie_consumers = [
+        {'name': row['member'], 'y': round(row['consumption_kwh'], 2)}
+        for _, row in member_totals.sort_values('consumption_kwh', ascending=False).head(5).iterrows()
+    ]
+
+    aggregate_metadata = build_metadata(
+        combined_df,
+        {'timestamp': 'timestamp', 'production': 'production_kwh', 'consumption': 'consumption_kwh'},
+        file_type='project_analysis',
+        totals_override={'production_kwh': total_production_all, 'consumption_kwh': total_consumption_all},
+        normalized_year=normalized_year,
+    )
+
+    kpis = {
+        'total_production': total_production_all,
+        'total_consumption': total_consumption_all,
+        'net_surplus': total_production_all - total_consumption_all,
+        'autonomy_coverage': (total_production_all / total_consumption_all * 100) if total_consumption_all > 0 else 0.0,
+    }
+
     member_stats_sorted = sorted(
         member_stats,
         key=lambda item: item['metadata'].get('totals', {}).get('consumption_kwh', 0),
@@ -392,6 +451,7 @@ def project_analysis_page(request, project_id):
         "core/project_analysis.html",
         {
             "project": project,
+            "aggregate_metadata": asdict(aggregate_metadata),
             "member_stats": member_stats_sorted,
             "totals_by_instant": totals_by_instant.to_dict(orient="records"),
             "totals_by_month": totals_by_month.to_dict(orient="index"),
@@ -400,6 +460,14 @@ def project_analysis_page(request, project_id):
             "total_consumption_all": total_consumption_all,
             "avg_profile_categories": avg_profile_categories,
             "avg_profile_series": avg_profile_series,
+            "daily_categories": daily_categories,
+            "daily_series": daily_series,
+            "monthly_categories": monthly_categories,
+            "monthly_series": monthly_series,
+            "monthly_detail": monthly_detail,
+            "pie_producers": pie_producers,
+            "pie_consumers": pie_consumers,
+            "kpis": kpis,
         },
     )
 
