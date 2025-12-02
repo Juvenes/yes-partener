@@ -92,6 +92,24 @@ class Member(models.Model):
     def __str__(self):
         return f"{self.name} ({self.project.name})"
 
+
+class IngestionTemplate(models.Model):
+    """Stocke les fichiers normalisés issus de l'outil d'ingestion."""
+
+    name = models.CharField(max_length=255)
+    tags = models.CharField(max_length=255, blank=True)
+    source_file = models.FileField(upload_to="ingestion_sources/")
+    generated_file = models.FileField(upload_to="ingestion_generated/")
+    metadata = models.JSONField(blank=True, null=True)
+    row_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "name"]
+
+    def __str__(self):
+        return self.name
+
 class MemberProfile(models.Model):
     """Lien N:N entre Membre et Profil (un membre peut avoir plusieurs profils)."""
     member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="member_profiles")

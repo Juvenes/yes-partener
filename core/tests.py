@@ -1,13 +1,22 @@
 import os
 from datetime import datetime, timedelta
-from tempfile import NamedTemporaryFile
+import io
+import pandas as pd
+from tempfile import NamedTemporaryFile, mkdtemp
 
 from django.core.files.base import ContentFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .forms import StageTwoScenarioForm, StageThreeScenarioForm
-from .models import Member, Profile, Project, StageTwoScenario, StageThreeScenario
+from .models import (
+    IngestionTemplate,
+    Member,
+    Profile,
+    Project,
+    StageTwoScenario,
+    StageThreeScenario,
+)
 from .stage3 import (
     build_member_inputs,
     build_scenario_parameters,
@@ -21,6 +30,7 @@ from .stage3 import (
 )
 from .stage2 import load_project_timeseries, build_iteration_configs, evaluate_sharing
 from .timeseries import parse_profile_timeseries, build_indexed_template
+from . import views
 
 
 class ProfileParsingTests(TestCase):
@@ -192,6 +202,100 @@ class TemplateIndexingTests(TestCase):
         response = self.client.post(reverse("template_helper"), {"timeseries_file": upload})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv")
+
+    def test_template_helper_applies_clean_tags(self):
+        upload = ContentFile(
+            b"Date+Quart time,consumption,injection\n2024-01-01 00:00,1,0"
+        )
+        upload.name = "sample.csv"
+
+        response = self.client.post(
+            reverse("template_helper"),
+            {"timeseries_file": upload, "tags": "Bureau; PV; bureau"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+        df = pd.read_csv(io.BytesIO(response.content))
+        # Duplicate tag is removed, separator normalised
+        self.assertEqual(df.iloc[0]["label"], "Bureau, PV")
+
+    @override_settings(MEDIA_ROOT=mkdtemp())
+    def test_template_helper_persists_ingestion_template(self):
+        upload = ContentFile(
+            b"Date+Quart time,consumption,injection\n2024-01-01 00:00,1,0"
+        )
+        upload.name = "source_timeseries.csv"
+
+        response = self.client.post(
+            reverse("template_helper"),
+            {"timeseries_file": upload, "tags": "Bureau; PV"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(IngestionTemplate.objects.count(), 1)
+        template = IngestionTemplate.objects.first()
+        self.assertEqual(template.tags, "Bureau, PV")
+        self.assertTrue(template.source_file.name.endswith("source_timeseries.csv"))
+        self.assertTrue(template.generated_file.name.endswith("_indexed.csv"))
+        self.assertEqual(template.row_count, 1)
+        self.assertIsInstance(template.metadata, dict)
+        self.assertEqual(template.metadata.get("row_count"), 1)
+        self.assertIn("start", template.metadata)
+        self.assertIn("end", template.metadata)
+
+    def test_clean_tags_helper(self):
+        self.assertEqual(views._clean_tags(""), "")
+        self.assertEqual(views._clean_tags("PV;PV;"), "PV")
+        self.assertEqual(views._clean_tags("  Maison , PV ; BUREAU"), "Maison, PV, BUREAU")
+
+    @override_settings(MEDIA_ROOT=mkdtemp())
+    def test_member_can_reuse_saved_ingestion_template(self):
+        project = Project.objects.create(name="Template Project")
+        raw = b"Date+Quart time,consumption\n2024-01-01 00:00,2"
+        source = ContentFile(raw)
+        source.name = "meter.xlsx"
+
+        converted = build_indexed_template(ContentFile(raw))
+        buffer = io.StringIO()
+        converted.to_csv(buffer, index=False)
+        generated = ContentFile(buffer.getvalue().encode("utf-8"))
+        generated.name = "meter_indexed.csv"
+
+        template = IngestionTemplate.objects.create(
+            name="Modèle compteur",
+            tags="Compteur",
+            metadata={
+                "row_count": len(converted.index),
+                "start": "2024-01-01 00:00",
+                "end": "2024-01-01 00:00",
+                "totals": {"consumption_kwh": 2.0, "production_kwh": 0.0},
+                "warnings": [],
+            },
+            row_count=len(converted.index),
+        )
+        template.source_file.save(source.name, source, save=False)
+        template.generated_file.save(generated.name, generated, save=True)
+
+        response = self.client.post(
+            reverse("member_create", args=[project.id]),
+            {
+                "name": "Membre modèle",
+                "data_mode": "timeseries_csv",
+                "ingestion_template_id": str(template.id),
+                "utility": "",
+                "annual_consumption_kwh": "",
+                "annual_production_kwh": "",
+                "current_unit_price_eur_per_kwh": "0.25",
+                "current_fixed_fee_eur": "0",
+                "injection_annual_kwh": "0",
+                "injection_unit_price_eur_per_kwh": "0.05",
+            },
+        )
+
+        self.assertRedirects(response, reverse("project_detail", args=[project.id]))
+        member = Member.objects.get(project=project, name="Membre modèle")
+        self.assertTrue(member.timeseries_file.name.endswith(".csv"))
+        self.assertEqual(member.timeseries_metadata["row_count"], template.row_count)
 
 
 class StageThreeFormsTests(TestCase):
