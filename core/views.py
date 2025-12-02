@@ -161,9 +161,29 @@ def template_helper(request):
 
         filename = slugify(label or upload.name.rsplit(".", 1)[0] or "timeseries")
 
+        metadata_input = converted.rename(
+            columns={
+                "timestamp": "timestamp",
+                "consumption_kwh": "consumption_kwh",
+                "injection_kwh": "production_kwh",
+            }
+        )
+        template_metadata = asdict(
+            build_metadata(
+                metadata_input,
+                {
+                    "timestamp": "timestamp",
+                    "production": "production_kwh",
+                    "consumption": "consumption_kwh",
+                },
+                file_type="ingestion_template",
+            )
+        )
+
         template_record = IngestionTemplate(
             name=label or upload.name,
             tags=cleaned_tags,
+            metadata=template_metadata,
             row_count=len(converted.index),
         )
 
@@ -259,13 +279,24 @@ def member_create(request, project_id):
             )
             return redirect("project_detail", project_id=project.id)
 
-        try:
-            parse_result = parse_member_timeseries(upload)
-        except TimeseriesError as exc:
-            messages.error(request, f"Import impossible : {exc}")
-            return redirect("project_detail", project_id=project.id)
+        parse_result = None
+        metadata = None
 
-        metadata = asdict(parse_result.metadata)
+        if template and template.metadata:
+            metadata = template.metadata
+        else:
+            try:
+                parse_result = parse_member_timeseries(upload)
+            except TimeseriesError as exc:
+                messages.error(request, f"Import impossible : {exc}")
+                return redirect("project_detail", project_id=project.id)
+
+            metadata = asdict(parse_result.metadata)
+
+            if template:
+                template.metadata = metadata
+                template.row_count = metadata.get("row_count", template.row_count)
+                template.save(update_fields=["metadata", "row_count"])
 
         member = Member(
             project=project,
@@ -303,9 +334,14 @@ def member_create(request, project_id):
             ),
         )
 
-        if parse_result.metadata.warnings:
-            for warning in parse_result.metadata.warnings:
-                messages.warning(request, warning)
+        warning_list = []
+        if parse_result and parse_result.metadata.warnings:
+            warning_list = parse_result.metadata.warnings
+        elif isinstance(metadata, dict):
+            warning_list = metadata.get("warnings") or []
+
+        for warning in warning_list:
+            messages.warning(request, warning)
 
         return redirect("project_detail", project_id=project.id)
 

@@ -238,6 +238,10 @@ class TemplateIndexingTests(TestCase):
         self.assertTrue(template.source_file.name.endswith("source_timeseries.csv"))
         self.assertTrue(template.generated_file.name.endswith("_indexed.csv"))
         self.assertEqual(template.row_count, 1)
+        self.assertIsInstance(template.metadata, dict)
+        self.assertEqual(template.metadata.get("row_count"), 1)
+        self.assertIn("start", template.metadata)
+        self.assertIn("end", template.metadata)
 
     def test_clean_tags_helper(self):
         self.assertEqual(views._clean_tags(""), "")
@@ -260,6 +264,13 @@ class TemplateIndexingTests(TestCase):
         template = IngestionTemplate.objects.create(
             name="Modèle compteur",
             tags="Compteur",
+            metadata={
+                "row_count": len(converted.index),
+                "start": "2024-01-01 00:00",
+                "end": "2024-01-01 00:00",
+                "totals": {"consumption_kwh": 2.0, "production_kwh": 0.0},
+                "warnings": [],
+            },
             row_count=len(converted.index),
         )
         template.source_file.save(source.name, source, save=False)

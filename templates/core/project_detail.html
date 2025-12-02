@@ -70,7 +70,7 @@
           <select name="ingestion_template_id" class="input">
             <option value="">— Modèle enregistré —</option>
             {% for template in ingestion_templates %}
-              <option value="{{ template.id }}">{{ template.name }}{% if template.tags %} — {{ template.tags }}{% endif %}</option>
+              <option value="{{ template.id }}">{{ template.name }}{% if template.tags %} — {{ template.tags }}{% endif %}{% if template.metadata %} ({{ template.metadata.row_count|default:template.row_count }} lignes){% endif %}</option>
             {% endfor %}
           </select>
           <p class="muted">Les modèles viennent de la page « Modèle d'import ». Le fichier sélectionné sera attaché au membre.</p>
