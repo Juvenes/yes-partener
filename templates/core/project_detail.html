@@ -65,6 +65,15 @@
           <label>Fichier de données (CSV ou Excel, quart d'heure)</label>
           <input class="input" type="file" name="timeseries_file" accept=".csv,.xls,.xlsx">
           <p class="muted">Colonnes détectées automatiquement (horodatage + énergie). Un résumé vous sera affiché après import.</p>
+
+          <label>Ou choisir un modèle converti</label>
+          <select name="ingestion_template_id" class="input">
+            <option value="">— Modèle enregistré —</option>
+            {% for template in ingestion_templates %}
+              <option value="{{ template.id }}">{{ template.name }}{% if template.tags %} — {{ template.tags }}{% endif %}</option>
+            {% endfor %}
+          </select>
+          <p class="muted">Les modèles viennent de la page « Modèle d'import ». Le fichier sélectionné sera attaché au membre.</p>
         </div>
 
         <div id="profile_fields" style="display:none">

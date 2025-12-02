@@ -11,6 +11,7 @@ from .models import (
     GlobalParameter,
     StageTwoScenario,
     StageThreeScenario,
+    IngestionTemplate,
 )
 from .forms import (
     ProjectForm,
@@ -55,6 +56,7 @@ import io
 from django.db import IntegrityError # Import IntegrityError
 from django.contrib import messages
 from django.utils.text import slugify
+import re
 import pandas as pd
 
 
@@ -63,6 +65,42 @@ def _parse_float(value, default=0.0):
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+INGESTION_TAG_SUGGESTIONS = [
+    "Bureau",
+    "Ecole",
+    "Hôpital",
+    "Logements",
+    "Maison individuelle",
+    "Industrie",
+    "PV toiture",
+    "Eolien",
+    "Chaufferie biomasse",
+    "Bornes de recharge",
+]
+
+
+def _clean_tags(raw: str) -> str:
+    """Normalise a free-form tags string into a comma-separated label."""
+
+    if not raw:
+        return ""
+
+    parts = re.split(r"[;,]", raw)
+    cleaned = []
+    seen = set()
+    for part in parts:
+        tag = part.strip()
+        if not tag:
+            continue
+        lower = tag.lower()
+        if lower in seen:
+            continue
+        seen.add(lower)
+        cleaned.append(tag)
+
+    return ", ".join(cleaned)
 
 
 # Simplified project list view
@@ -102,7 +140,10 @@ def template_helper(request):
 
     if request.method == "POST":
         upload = request.FILES.get("timeseries_file")
-        label = request.POST.get("label", "").strip()
+        raw_tags = request.POST.get("tags", "").strip()
+        # Backwards compatible with the old "label" field
+        cleaned_tags = _clean_tags(raw_tags)
+        label = cleaned_tags or request.POST.get("label", "").strip()
         if not upload:
             messages.error(request, "Veuillez sélectionner un fichier à convertir.")
             return redirect("template_helper")
@@ -115,10 +156,31 @@ def template_helper(request):
 
         buffer = io.StringIO()
         converted.to_csv(buffer, index=False)
+        csv_content = buffer.getvalue()
         buffer.seek(0)
 
-        response = HttpResponse(buffer.getvalue(), content_type="text/csv")
         filename = slugify(label or upload.name.rsplit(".", 1)[0] or "timeseries")
+
+        template_record = IngestionTemplate(
+            name=label or upload.name,
+            tags=cleaned_tags,
+            row_count=len(converted.index),
+        )
+
+        if hasattr(upload, "seek"):
+            upload.seek(0)
+        template_record.source_file.save(upload.name, upload, save=False)
+        template_record.generated_file.save(
+            f"{filename}_indexed.csv", ContentFile(csv_content.encode("utf-8")), save=False
+        )
+        template_record.save()
+
+        messages.success(
+            request,
+            "Modèle converti et sauvegardé. Vous pourrez le réutiliser dans la phase 1 des projets.",
+        )
+
+        response = HttpResponse(csv_content, content_type="text/csv")
         response["Content-Disposition"] = f'attachment; filename="{filename}_indexed.csv"'
         return response
 
@@ -135,7 +197,11 @@ def template_helper(request):
     return render(
         request,
         "core/template_helper.html",
-        {"preview_rows": preview},
+        {
+            "preview_rows": preview,
+            "tag_suggestions": INGESTION_TAG_SUGGESTIONS,
+            "ingestion_templates": IngestionTemplate.objects.all(),
+        },
     )
 
 
@@ -162,6 +228,7 @@ def project_detail(request, project_id):
             "member_form": member_form,
             "member_profile_form": member_profile_form,
             "profiles": profiles,
+            "ingestion_templates": IngestionTemplate.objects.all(),
         },
     )
 
@@ -177,8 +244,19 @@ def member_create(request, project_id):
             return redirect("project_detail", project_id=project.id)
 
         upload = form.cleaned_data.get("timeseries_file")
+        template = None
         if not upload:
-            messages.error(request, "Veuillez sélectionner un fichier de données.")
+            template_id = request.POST.get("ingestion_template_id")
+            if template_id:
+                template = get_object_or_404(IngestionTemplate, pk=template_id)
+                template.generated_file.open("rb")
+                upload = template.generated_file
+
+        if not upload:
+            messages.error(
+                request,
+                "Veuillez sélectionner un fichier de données ou choisir un modèle converti.",
+            )
             return redirect("project_detail", project_id=project.id)
 
         try:
@@ -198,9 +276,20 @@ def member_create(request, project_id):
         )
         member.save()
 
-        upload.seek(0)
-        filename = upload.name or f"member_{member.id}.csv"
-        member.timeseries_file.save(filename, upload, save=True)
+        if hasattr(upload, "seek"):
+            upload.seek(0)
+        filename = getattr(upload, "name", "") or f"member_{member.id}.csv"
+
+        if template:
+            template.generated_file.open("rb")
+            member.timeseries_file.save(
+                filename,
+                ContentFile(template.generated_file.read()),
+                save=True,
+            )
+            template.generated_file.close()
+        else:
+            member.timeseries_file.save(filename, upload, save=True)
 
         row_count = metadata.get("row_count")
         total_conso = float(metadata.get("totals", {}).get("consumption_kwh", 0.0) or 0.0)

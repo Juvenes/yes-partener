@@ -18,8 +18,14 @@
       <h3>Convertir un fichier</h3>
       <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
-        <label for="label">Label (optionnel)</label>
-        <input id="label" class="input" type="text" name="label" placeholder="Éolienne Nord, Bâtiment A, …">
+        <label for="tags">Tags (optionnel)</label>
+        <input id="tags" class="input" type="text" name="tags" list="tag-suggestions" placeholder="Bâtiment A, PV, …">
+        <datalist id="tag-suggestions">
+          {% for tag in tag_suggestions %}
+            <option value="{{ tag }}"></option>
+          {% endfor %}
+        </datalist>
+        <p class="muted">Ajoutez un ou plusieurs tags (séparés par des virgules ou des points-virgules). Ils seront appliqués automatiquement à toutes les lignes exportées.</p>
 
         <label for="timeseries_file">Fichier (CSV ou Excel)</label>
         <input id="timeseries_file" class="input" type="file" name="timeseries_file" accept=".csv,.xls,.xlsx" required>
@@ -27,6 +33,40 @@
 
         <button class="btn" type="submit" style="margin-top:.75rem">Générer le fichier indexé</button>
       </form>
+
+      <div style="margin-top:1rem">
+        <p class="muted">Exemples de tags :</p>
+        <div style="display:flex; flex-wrap:wrap; gap:.25rem;">
+          {% for tag in tag_suggestions %}
+            <span style="background:#eef1f7; border:1px solid #d5dbe7; border-radius:999px; padding:.25rem .6rem; font-size:.9rem;">{{ tag }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Modèles enregistrés</h3>
+      <p class="muted">Les fichiers convertis sont conservés pour réutilisation dans la phase 1 des projets.</p>
+      <table>
+        <thead>
+          <tr><th>Nom</th><th>Tags</th><th>Lignes</th><th>Télécharger</th></tr>
+        </thead>
+        <tbody>
+          {% for template in ingestion_templates %}
+            <tr>
+              <td>{{ template.name }}</td>
+              <td>{% if template.tags %}{{ template.tags }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{{ template.row_count }}</td>
+              <td>
+                <a href="{{ template.generated_file.url }}">Fichier indexé</a>
+                {% if template.source_file %}<br><a class="muted" href="{{ template.source_file.url }}">Source</a>{% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="muted">Aucun modèle enregistré pour l'instant.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
 
