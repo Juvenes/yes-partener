@@ -1,12 +1,5 @@
 from django import forms
-from .models import (
-    Project,
-    Member,
-    Dataset,
-    GlobalParameter,
-    StageTwoScenario,
-    StageThreeScenario,
-)
+from .models import Project, Member, Dataset, GlobalParameter, StageTwoScenario
 
 class ProjectForm(forms.ModelForm):
     class Meta:
@@ -22,10 +15,6 @@ class MemberForm(forms.ModelForm):
             "utility",
             "annual_consumption_kwh",
             "annual_production_kwh",
-            "current_unit_price_eur_per_kwh",
-            "current_fixed_fee_eur",
-            "injection_annual_kwh",
-            "injection_unit_price_eur_per_kwh",
         ]
 class DatasetForm(forms.ModelForm):
     tags = forms.CharField(required=False, help_text="Séparez les tags par des virgules")
@@ -148,83 +137,68 @@ class StageTwoScenarioForm(forms.ModelForm):
         return instance
 
 
-class StageThreeMemberCostForm(forms.ModelForm):
+class StageThreeTariffForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        label_map = {
+            "supplier_energy_price_eur_per_kwh": "Énergie (fournisseur)",
+            "distribution_tariff_eur_per_kwh": "Tarif distribution (DSO)",
+            "transport_tariff_eur_per_kwh": "Tarif transport (TSO)",
+            "green_support_eur_per_kwh": "Soutien énergie verte",
+            "access_fee_eur_per_kwh": "Redevance d'accès",
+            "special_excise_eur_per_kwh": "Accise spéciale",
+            "energy_contribution_eur_per_kwh": "Contribution énergie",
+            "injection_price_eur_per_kwh": "Prix d'injection",
+        }
+        for key, label in label_map.items():
+            if key in self.fields:
+                self.fields[key].label = label
+
     class Meta:
         model = Member
         fields = [
-            "current_unit_price_eur_per_kwh",
-            "current_fixed_fee_eur",
-            "injection_annual_kwh",
-            "injection_unit_price_eur_per_kwh",
+            "supplier_energy_price_eur_per_kwh",
+            "distribution_tariff_eur_per_kwh",
+            "transport_tariff_eur_per_kwh",
+            "green_support_eur_per_kwh",
+            "access_fee_eur_per_kwh",
+            "special_excise_eur_per_kwh",
+            "energy_contribution_eur_per_kwh",
+            "injection_price_eur_per_kwh",
         ]
         widgets = {
-            "current_unit_price_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
-            "current_fixed_fee_eur": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
-            "injection_annual_kwh": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
-            "injection_unit_price_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+            field: forms.NumberInput(attrs={"step": "0.001", "min": "0"})
+            for field in fields
         }
 
 
-class StageThreeScenarioForm(forms.ModelForm):
-    @classmethod
-    def default_initial(cls):
-        return {
-            "community_price_eur_per_kwh": "",
-            "price_min_eur_per_kwh": "",
-            "price_max_eur_per_kwh": "",
-            "community_variable_fee_eur_per_kwh": 0.009,
-            "community_fixed_fee_total_eur": 75.0,
-            "community_per_member_fee_eur": 100.0,
-            "community_injection_price_eur_per_kwh": 0.05,
-            "tariff_context": "community_grid",
-        }
+class CommunityOptimizationForm(forms.Form):
+    COMMUNITY_CHOICES = [
+        ("public_grid", "Communauté via réseau public"),
+        ("single_building", "Site unique / même bâtiment"),
+    ]
 
-    class Meta:
-        model = StageThreeScenario
-        fields = [
-            "name",
-            "community_price_eur_per_kwh",
-            "price_min_eur_per_kwh",
-            "price_max_eur_per_kwh",
-            "community_fixed_fee_total_eur",
-            "community_per_member_fee_eur",
-            "community_variable_fee_eur_per_kwh",
-            "community_injection_price_eur_per_kwh",
-            "tariff_context",
-            "notes",
-        ]
-        widgets = {
-            "community_price_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
-            "price_min_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
-            "price_max_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
-            "community_fixed_fee_total_eur": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
-            "community_per_member_fee_eur": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
-            "community_variable_fee_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
-            "community_injection_price_eur_per_kwh": forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
-            "notes": forms.TextInput(attrs={"placeholder": "Contexte ou hypothèses"}),
-        }
-
-    def clean(self):
-        cleaned = super().clean()
-        community_price = cleaned.get("community_price_eur_per_kwh")
-        price_min = cleaned.get("price_min_eur_per_kwh")
-        price_max = cleaned.get("price_max_eur_per_kwh")
-
-        if price_min is not None and price_max is not None and price_min > price_max:
-            raise forms.ValidationError(
-                "La borne minimum doit être inférieure ou égale à la borne maximum."
-            )
-
-        if community_price is not None:
-            if price_min is not None and community_price < price_min:
-                self.add_error(
-                    "community_price_eur_per_kwh",
-                    "Le prix communautaire doit être supérieur ou égal à la borne minimum.",
-                )
-            if price_max is not None and community_price > price_max:
-                self.add_error(
-                    "community_price_eur_per_kwh",
-                    "Le prix communautaire doit être inférieur ou égal à la borne maximum.",
-                )
-
-        return cleaned
+    community_fee_eur_per_kwh = forms.FloatField(
+        label="communityFee (€/kWh)",
+        required=False,
+        min_value=0.0,
+        initial=0.0,
+        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+    )
+    community_type = forms.ChoiceField(
+        label="Type de communauté",
+        choices=COMMUNITY_CHOICES,
+        initial="public_grid",
+    )
+    reduced_distribution_eur_per_kwh = forms.FloatField(
+        label="Distribution réduite (€/kWh)",
+        required=False,
+        min_value=0.0,
+        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+    )
+    reduced_transport_eur_per_kwh = forms.FloatField(
+        label="Transport réduit (€/kWh)",
+        required=False,
+        min_value=0.0,
+        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+    )

@@ -40,26 +40,46 @@ class Member(models.Model):
     annual_consumption_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
     annual_production_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
 
-    # Stage 3 cost inputs
-    current_unit_price_eur_per_kwh = models.FloatField(
+    # Stage 3 tariff components (€/kWh)
+    supplier_energy_price_eur_per_kwh = models.FloatField(
         default=0.25,
         validators=[MinValueValidator(0.0)],
-        help_text="Prix unitaire actuel payé au fournisseur (€/kWh).",
+        help_text="Prix énergie facturé par le fournisseur (€/kWh).",
     )
-    current_fixed_fee_eur = models.FloatField(
-        default=0.0,
-        validators=[MinValueValidator(0.0)],
-        help_text="Partie fixe annuelle de la facture actuelle (€/an).",
-    )
-    injection_annual_kwh = models.FloatField(
-        default=0.0,
-        validators=[MinValueValidator(0.0)],
-        help_text="Energie annuelle injectée sur le réseau (kWh).",
-    )
-    injection_unit_price_eur_per_kwh = models.FloatField(
+    distribution_tariff_eur_per_kwh = models.FloatField(
         default=0.05,
         validators=[MinValueValidator(0.0)],
-        help_text="Tarif de rachat pour l'injection (€/kWh).",
+        help_text="Tarif de distribution (DSO) (€/kWh).",
+    )
+    transport_tariff_eur_per_kwh = models.FloatField(
+        default=0.02,
+        validators=[MinValueValidator(0.0)],
+        help_text="Tarif de transport (TSO) (€/kWh).",
+    )
+    green_support_eur_per_kwh = models.FloatField(
+        default=0.01,
+        validators=[MinValueValidator(0.0)],
+        help_text="Soutien énergie verte (€/kWh).",
+    )
+    access_fee_eur_per_kwh = models.FloatField(
+        default=0.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Redevance d'accès (€/kWh).",
+    )
+    special_excise_eur_per_kwh = models.FloatField(
+        default=0.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Accise spéciale (€/kWh).",
+    )
+    energy_contribution_eur_per_kwh = models.FloatField(
+        default=0.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Contribution énergie (€/kWh).",
+    )
+    injection_price_eur_per_kwh = models.FloatField(
+        default=0.05,
+        validators=[MinValueValidator(0.0)],
+        help_text="Tarif d'injection (€/kWh).",
     )
     
     class Meta:
@@ -216,175 +236,3 @@ class StageThreeScenario(models.Model):
 
     def __str__(self):
         return f"{self.project.name} – {self.name}"
-
-
-
-class StageTwoScenario(models.Model):
-    KEY_TYPE_CHOICES = [
-        ("equal", "Clé part égale"),
-        ("percentage", "Clé pourcentage fixe"),
-        ("proportional", "Clé proportionnelle à la consommation"),
-    ]
-
-    project = models.ForeignKey(
-        Project,
-        on_delete=models.CASCADE,
-        related_name="stage2_scenarios",
-    )
-    name = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
-    iterations = models.JSONField(default=list, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        unique_together = ("project", "name")
-        ordering = ["project", "name"]
-
-    def __str__(self):
-        return f"{self.project.name} – {self.name}"
-
-    def iteration_configs(self):
-        configs = []
-        allowed = {choice[0] for choice in self.KEY_TYPE_CHOICES}
-        raw_iterations = self.iterations or []
-        for index, payload in enumerate(raw_iterations, start=1):
-            if not isinstance(payload, dict):
-                continue
-            key_type = payload.get("key_type")
-            if key_type not in allowed:
-                continue
-            order = payload.get("order") or index
-            try:
-                order = int(order)
-            except (TypeError, ValueError):
-                order = index
-
-            raw_percentages = payload.get("percentages") or {}
-            percentages = {}
-            if isinstance(raw_percentages, dict):
-                for member_id, value in raw_percentages.items():
-                    try:
-                        member_key = int(member_id)
-                        percentages[member_key] = float(value)
-                    except (TypeError, ValueError):
-                        continue
-
-            configs.append(
-                {
-                    "order": order,
-                    "key_type": key_type,
-                    "percentages": percentages,
-                }
-            )
-
-        configs.sort(key=lambda item: item.get("order", 0))
-        return configs
-
-
-class StageThreeScenario(models.Model):
-    TARIFF_CONTEXT_CHOICES = [
-        ("community_grid", "Communauté via réseau public"),
-        ("community_same_site", "Communauté même bâtiment"),
-        ("traditional", "Facture fournisseur de référence"),
-    ]
-
-    project = models.ForeignKey(
-        Project,
-        on_delete=models.CASCADE,
-        related_name="stage3_scenarios",
-    )
-    name = models.CharField(max_length=200)
-    community_price_eur_per_kwh = models.FloatField(
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0.0)],
-        help_text="Prix cible de l'énergie communautaire (€/kWh).",
-    )
-    price_min_eur_per_kwh = models.FloatField(
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0.0)],
-        help_text="Borne minimum pour optimiser le prix communautaire (€/kWh).",
-    )
-    price_max_eur_per_kwh = models.FloatField(
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0.0)],
-        help_text="Borne maximum pour optimiser le prix communautaire (€/kWh).",
-    )
-    community_fixed_fee_total_eur = models.FloatField(
-        default=0.0,
-        validators=[MinValueValidator(0.0)],
-        help_text="Coût fixe annuel de la communauté à répartir (€/an).",
-    )
-    community_per_member_fee_eur = models.FloatField(
-        default=0.0,
-        validators=[MinValueValidator(0.0)],
-        help_text="Frais annuels individuels (€/an) pour les membres participants.",
-    )
-    community_variable_fee_eur_per_kwh = models.FloatField(
-        default=0.0,
-        validators=[MinValueValidator(0.0)],
-        help_text="Frais variables appliqués à chaque kWh communautaire (€/kWh).",
-    )
-    community_injection_price_eur_per_kwh = models.FloatField(
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0.0)],
-        help_text="Tarif interne pour rémunérer l'injection (€/kWh). Laisser vide pour utiliser le tarif membre.",
-    )
-    tariff_context = models.CharField(
-        max_length=40,
-        choices=TARIFF_CONTEXT_CHOICES,
-        default="community_grid",
-        help_text="Cadre réglementaire utilisé pour expliquer les composantes de coût.",
-    )
-    notes = models.CharField(max_length=255, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        unique_together = ("project", "name")
-        ordering = ["project", "name"]
-
-    def __str__(self):
-        return f"{self.project.name} – {self.name}"
-
-
-class StageThreeScenarioMember(models.Model):
-    scenario = models.ForeignKey(
-        StageThreeScenario,
-        on_delete=models.CASCADE,
-        related_name="member_settings",
-    )
-    member = models.ForeignKey(
-        Member,
-        on_delete=models.CASCADE,
-        related_name="stage3_settings",
-    )
-    share_override = models.FloatField(
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
-        help_text="Valeur utilisée par défaut pour ce membre (0-1).",
-    )
-    min_share = models.FloatField(
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
-        help_text="Bornes minimales pour les optimisations (0-1).",
-    )
-    max_share = models.FloatField(
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
-        help_text="Bornes maximales pour les optimisations (0-1).",
-    )
-
-    class Meta:
-        unique_together = ("scenario", "member")
-        ordering = ["scenario", "member__name"]
-
-    def __str__(self):
-        return f"{self.scenario.name} → {self.member.name}"

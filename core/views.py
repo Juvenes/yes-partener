@@ -4,22 +4,15 @@ from django.http import HttpResponseBadRequest, HttpResponse
 from dataclasses import asdict
 from typing import Dict, List
 from django.db.models import Q
-from .models import (
-    Project,
-    Member,
-    Dataset,
-    GlobalParameter,
-    StageTwoScenario,
-    StageThreeScenario,
-)
+from .models import Project, Member, Dataset, GlobalParameter, StageTwoScenario
 from .forms import (
     ProjectForm,
     MemberForm,
     DatasetForm,
     GlobalParameterForm,
     StageTwoScenarioForm,
-    StageThreeMemberCostForm,
-    StageThreeScenarioForm,
+    StageThreeTariffForm,
+    CommunityOptimizationForm,
 )
 from .stage2 import (
     evaluate_sharing as evaluate_stage_two,
@@ -27,15 +20,9 @@ from .stage2 import (
     load_project_timeseries as load_stage_two_timeseries,
 )
 from .stage3 import (
-    build_member_inputs,
-    build_scenario_parameters,
-    derive_price_envelope,
-    evaluate_scenario,
-    generate_trace_rows,
-    optimize_group_benefit,
-    optimize_everyone_wins,
-    price_candidates,
-    reference_cost_guide,
+    optimise_internal_price,
+    build_member_tariffs,
+    compute_baselines,
 )
 from .timeseries import (
     TimeseriesError,
@@ -822,93 +809,81 @@ def stage2_scenario_csv(request, scenario_id):
 def project_stage3(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     members = list(project.members.all().order_by("name"))
-    member_inputs = build_member_inputs(members)
     member_forms = {
-        member.id: StageThreeMemberCostForm(instance=member, prefix=f"member-{member.id}")
+        member.id: StageThreeTariffForm(instance=member, prefix=f"member-{member.id}")
         for member in members
     }
-    member_cards = [
-        {
-            "input": member_input,
-            "form": member_forms.get(member_input.member_id),
-            "current_cost": member_input.current_cost(),
-            "cost_per_kwh": member_input.cost_per_kwh,
-        }
-        for member_input in member_inputs
-    ]
 
-    guide = reference_cost_guide()
-    guide_sections = [
-        guide[key]
-        for key in ["traditional", "community_grid", "community_same_site"]
-        if key in guide
-    ]
+    optimisation_form = CommunityOptimizationForm(prefix="opt")
+    optimisation_result = None
+    baselines = {}
+    load_warnings: List[str] = []
+    timeseries_df = None
 
-    scenario_form = StageThreeScenarioForm(
-        prefix="scenario-new",
-        initial=StageThreeScenarioForm.default_initial(),
-    )
-    scenarios = project.stage3_scenarios.all().order_by("name")
+    try:
+        timeseries_df, load_warnings = load_stage_two_timeseries(members)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    except Exception as exc:  # pragma: no cover - safety net for UI feedback
+        messages.error(request, f"Impossible de charger les séries temporelles : {exc}")
 
-    scenario_cards = []
-    for scenario in scenarios:
-        params = build_scenario_parameters(scenario)
-        envelope = derive_price_envelope(member_inputs, params)
+    tariffs = build_member_tariffs(members)
+    baselines = compute_baselines(timeseries_df, tariffs)
 
-        evaluation = None
-        evaluation_error = None
-        try:
-            base_price = params.community_price_eur_per_kwh
-            if base_price is not None:
-                evaluation = evaluate_scenario(member_inputs, params, price=base_price)
-        except ValueError as exc:
-            evaluation_error = str(exc)
+    if request.method == "POST" and "optimize" in request.POST:
+        optimisation_form = CommunityOptimizationForm(request.POST, prefix="opt")
+        if optimisation_form.is_valid():
+            if timeseries_df is None or timeseries_df.empty:
+                messages.error(
+                    request,
+                    "Aucune donnée temporelle normalisée n'est disponible pour optimiser le prix communautaire.",
+                )
+            else:
+                data = optimisation_form.cleaned_data
+                optimisation_result = optimise_internal_price(
+                    tariffs=tariffs,
+                    timeseries=timeseries_df,
+                    community_fee_eur_per_kwh=data.get("community_fee_eur_per_kwh") or 0.0,
+                    community_type=data.get("community_type") or "public_grid",
+                    reduced_distribution=data.get("reduced_distribution_eur_per_kwh"),
+                    reduced_transport=data.get("reduced_transport_eur_per_kwh"),
+                )
+        else:
+            messages.error(request, "Corrigez les paramètres de la communauté pour lancer l'optimisation.")
 
-        group_optimization = optimize_group_benefit(member_inputs, params, envelope)
-        everyone_optimization = optimize_everyone_wins(member_inputs, params, envelope)
+    outcome_lookup: Dict[int, object] = {}
+    if optimisation_result and optimisation_result.member_outcomes:
+        outcome_lookup = {out.member_id: out for out in optimisation_result.member_outcomes}
 
-        if evaluation is None and group_optimization is not None:
-            evaluation = group_optimization.evaluation
+    total_baseline_cost = sum(result.cost_eur for result in baselines.values()) if baselines else 0.0
+    total_consumption = sum(result.consumption_kwh for result in baselines.values()) if baselines else 0.0
+    avg_baseline_cost = total_baseline_cost / total_consumption if total_consumption > 0 else 0.0
 
-        scenario_cards.append(
+    member_cards = []
+    for tariff in tariffs:
+        baseline = baselines.get(tariff.member_id)
+        member_cards.append(
             {
-                "scenario": scenario,
-                "form": StageThreeScenarioForm(
-                    instance=scenario, prefix=f"scenario-{scenario.id}"
-                ),
-                "evaluation": evaluation,
-                "evaluation_error": evaluation_error,
-                "optimizations": {
-                    "group": group_optimization,
-                    "everyone": everyone_optimization,
-                },
-                "price_envelope": envelope,
-                "envelope_defined": envelope.is_defined(),
-                "params": params,
-                "guide": guide.get(scenario.tariff_context),
+                "tariff": tariff,
+                "baseline": baseline,
+                "form": member_forms.get(tariff.member_id),
+                "community": outcome_lookup.get(tariff.member_id),
             }
         )
-
-    total_current_cost = sum(inp.current_cost() for inp in member_inputs)
-    total_consumption = sum(inp.consumption_kwh for inp in member_inputs)
-    avg_current_cost = total_current_cost / total_consumption if total_consumption > 0 else 0.0
 
     return render(
         request,
         "core/project_stage3.html",
         {
             "project": project,
-            "members": members,
-            "member_inputs": member_inputs,
-            "member_forms": member_forms,
             "member_cards": member_cards,
-            "scenario_form": scenario_form,
-            "scenario_cards": scenario_cards,
-            "total_current_cost": total_current_cost,
+            "optimisation_form": optimisation_form,
+            "optimisation_result": optimisation_result,
+            "community_outcomes": outcome_lookup,
+            "total_baseline_cost": total_baseline_cost,
             "total_consumption": total_consumption,
-            "avg_current_cost": avg_current_cost,
-            "guide_sections": guide_sections,
-            "guide_lookup": guide,
+            "avg_baseline_cost": avg_baseline_cost,
+            "load_warnings": load_warnings,
         },
     )
 
@@ -917,91 +892,14 @@ def project_stage3(request, project_id):
 def stage3_member_update(request, project_id, member_id):
     project = get_object_or_404(Project, pk=project_id)
     member = get_object_or_404(Member, pk=member_id, project=project)
-    form = StageThreeMemberCostForm(
+    form = StageThreeTariffForm(
         request.POST, instance=member, prefix=f"member-{member.id}"
     )
     if form.is_valid():
         form.save()
-        messages.success(request, f"Données tarifaires mises à jour pour {member.name}.")
+        messages.success(request, f"Structure tarifaire mise à jour pour {member.name}.")
     else:
         messages.error(request, f"Impossible de mettre à jour {member.name} : {form.errors.as_json()}")
     return redirect("project_stage3", project_id=project.id)
-
-
-@require_http_methods(["POST"])
-def stage3_scenario_create(request, project_id):
-    project = get_object_or_404(Project, pk=project_id)
-    form = StageThreeScenarioForm(request.POST, prefix="scenario-new")
-    if form.is_valid():
-        scenario = form.save(commit=False)
-        scenario.project = project
-        scenario.save()
-        messages.success(request, f"Scénario '{scenario.name}' créé.")
-    else:
-        messages.error(request, f"Création du scénario impossible : {form.errors.as_json()}")
-    return redirect("project_stage3", project_id=project.id)
-
-
-@require_http_methods(["POST"])
-def stage3_scenario_update(request, project_id, scenario_id):
-    project = get_object_or_404(Project, pk=project_id)
-    scenario = get_object_or_404(StageThreeScenario, pk=scenario_id, project=project)
-    form = StageThreeScenarioForm(
-        request.POST, instance=scenario, prefix=f"scenario-{scenario.id}"
-    )
-    if form.is_valid():
-        form.save()
-        messages.success(request, f"Scénario '{scenario.name}' mis à jour.")
-    else:
-        messages.error(request, f"Mise à jour impossible : {form.errors.as_json()}")
-    return redirect("project_stage3", project_id=project.id)
-
-
-@require_http_methods(["POST"])
-def stage3_scenario_delete(request, project_id, scenario_id):
-    project = get_object_or_404(Project, pk=project_id)
-    scenario = get_object_or_404(StageThreeScenario, pk=scenario_id, project=project)
-    scenario.delete()
-    messages.success(request, "Scénario supprimé.")
-    return redirect("project_stage3", project_id=project.id)
-
-
-@require_http_methods(["GET"])
-def stage3_scenario_trace(request, project_id, scenario_id):
-    project = get_object_or_404(Project, pk=project_id)
-    scenario = get_object_or_404(StageThreeScenario, pk=scenario_id, project=project)
-    members = list(project.members.all().order_by("name"))
-    inputs = build_member_inputs(members)
-    params = build_scenario_parameters(scenario)
-    envelope = derive_price_envelope(inputs, params)
-
-    if params.community_price_eur_per_kwh is not None:
-        prices = [params.community_price_eur_per_kwh]
-    else:
-        prices = price_candidates(envelope)
-
-    if not prices:
-        messages.warning(
-            request,
-            "Aucun prix n'a pu être évalué pour générer la trace Stage 3.",
-        )
-        return redirect("project_stage3", project_id=project.id)
-
-    rows = generate_trace_rows(inputs, params, prices)
-    if not rows:
-        messages.warning(request, "Aucune donnée disponible pour l'export Stage 3.")
-        return redirect("project_stage3", project_id=project.id)
-
-    response = HttpResponse(content_type="text/csv")
-    filename = f"stage3_{slugify(project.name)}_{slugify(scenario.name)}.csv"
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-
-    fieldnames = list(rows[0].keys())
-    writer = csv.DictWriter(response, fieldnames=fieldnames)
-    writer.writeheader()
-    for row in rows:
-        writer.writerow(row)
-
-    return response
 
 

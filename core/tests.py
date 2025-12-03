@@ -1,10 +1,9 @@
 from django.core.files.base import ContentFile
 from django.test import TestCase
-from django.urls import reverse
 
 from .models import Dataset, Member, Project
-from .forms import StageThreeScenarioForm
-from .stage3 import build_member_inputs
+from .forms import StageThreeTariffForm
+from .stage3 import build_member_tariffs, compute_baselines
 from .timeseries import build_indexed_template, parse_member_timeseries
 
 
@@ -29,23 +28,14 @@ class DatasetParsingTests(TestCase):
         self.assertIn("month", result.data.columns)
 
 
-class MemberCostInputTests(TestCase):
-    def test_member_inputs_use_dataset_totals(self):
+class MemberTariffTests(TestCase):
+    def test_tariff_form_labels(self):
+        form = StageThreeTariffForm()
+        self.assertEqual(form.fields["supplier_energy_price_eur_per_kwh"].label, "Énergie (fournisseur)")
+
+    def test_baseline_uses_zero_when_missing_timeseries(self):
         project = Project.objects.create(name="Test")
-        dataset = Dataset.objects.create(
-            name="Dataset",
-            tags=[],
-            source_file=ContentFile(b"", name="empty.csv"),
-            normalized_file=ContentFile(b"", name="norm.xlsx"),
-            metadata={"totals": {"consumption_kwh": 1200}},
-        )
-        member = Member.objects.create(project=project, name="Alpha", dataset=dataset)
-        inputs = build_member_inputs([member])
-        self.assertEqual(len(inputs), 1)
-        self.assertEqual(inputs[0].consumption_kwh, 1200)
-
-
-class StageThreeFormsTests(TestCase):
-    def test_scenario_form_default_initial(self):
-        defaults = StageThreeScenarioForm.default_initial()
-        self.assertIn("community_price_eur_per_kwh", defaults)
+        member = Member.objects.create(project=project, name="Alpha")
+        tariffs = build_member_tariffs([member])
+        baselines = compute_baselines(None, tariffs)
+        self.assertEqual(baselines[member.id].consumption_kwh, 0)

@@ -23,27 +23,6 @@ urlpatterns = [
         v.stage2_scenario_csv,
         name="stage2_scenario_csv",
     ),
-    path(
-        "projects/<int:project_id>/stage3/scenarios/create/",
-        v.stage3_scenario_create,
-        name="stage3_scenario_create",
-    ),
-    path(
-        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/update/",
-        v.stage3_scenario_update,
-        name="stage3_scenario_update",
-    ),
-    path(
-        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/delete/",
-        v.stage3_scenario_delete,
-        name="stage3_scenario_delete",
-    ),
-    path(
-        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/trace/",
-        v.stage3_scenario_trace,
-        name="stage3_scenario_trace",
-    ),
-
     # New dedicated pages
     path("datasets/", v.dataset_list, name="datasets"),
     path("datasets/create/", v.dataset_create, name="dataset_create"),
