@@ -182,6 +182,45 @@ def evaluate_sharing(
             production.setdefault(member_id, 0.0)
             consumption.setdefault(member_id, 0.0)
 
+        total_demand = sum(consumption.values())
+        if total_demand <= EPSILON:
+            for member_id in unique_member_ids:
+                stats_member = stats[member_id]
+                stats_member["total_production"] += production.get(member_id, 0.0)
+                stats_member["total_consumption"] += consumption.get(member_id, 0.0)
+                stats_member["community_consumption"] += 0.0
+                stats_member["external_consumption"] += 0.0
+                stats_member["shared_production"] += 0.0
+                stats_member["unused_production"] += production.get(member_id, 0.0)
+
+            timeline_records.append(
+                {
+                    "timestamp": timestamp,
+                    "production_total_kwh": sum(production.values()),
+                    "consumption_total_kwh": total_demand,
+                    "community_allocated_kwh": 0.0,
+                    "remaining_production_kwh": sum(production.values()),
+                    "remaining_consumption_kwh": 0.0,
+                    **{
+                        f"member_{member_id}_community_kwh": 0.0
+                        for member_id in unique_member_ids
+                    },
+                    **{
+                        f"member_{member_id}_external_kwh": consumption.get(member_id, 0.0)
+                        for member_id in unique_member_ids
+                    },
+                    **{
+                        f"member_{member_id}_production_shared_kwh": 0.0
+                        for member_id in unique_member_ids
+                    },
+                    **{
+                        f"member_{member_id}_production_unused_kwh": production.get(member_id, 0.0)
+                        for member_id in unique_member_ids
+                    },
+                }
+            )
+            continue
+
         original_production = production.copy()
         original_consumption = consumption.copy()
         member_allocations = {member_id: 0.0 for member_id in unique_member_ids}

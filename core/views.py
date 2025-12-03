@@ -580,6 +580,132 @@ def project_stage2(request, project_id):
         "proportional": "Clé proportionnelle conso",
     }
 
+    def build_stage2_visuals(evaluation):
+        timeline = evaluation.timeline.copy()
+        if timeline.empty:
+            return {"has_data": False}
+
+        if hasattr(timeline["timestamp"], "dt"):
+            timeline["timestamp"] = pd.to_datetime(timeline["timestamp"], errors="coerce")
+        timeline = timeline.dropna(subset=["timestamp"])
+        timeline = timeline.sort_values("timestamp")
+        timeline["month_num"] = timeline["timestamp"].dt.month
+        timeline["month_label"] = timeline["month_num"].apply(lambda m: calendar.month_abbr[int(m)])
+        timeline["week_num"] = timeline["timestamp"].dt.isocalendar().week.astype(int)
+
+        monthly = (
+            timeline.groupby(["month_num", "month_label"])[
+                [
+                    "production_total_kwh",
+                    "community_allocated_kwh",
+                    "remaining_production_kwh",
+                    "remaining_consumption_kwh",
+                ]
+            ]
+            .sum()
+            .reset_index()
+            .sort_values("month_num")
+        )
+        months_order = list(monthly["month_num"].astype(int))
+        month_labels = list(monthly["month_label"])
+
+        member_monthly = []
+        member_weekly = []
+
+        for member in members_with_series:
+            key = f"member_{member.id}_community_kwh"
+            if key not in timeline.columns:
+                continue
+            member_month = timeline.groupby("month_num")[key].sum().reindex(months_order, fill_value=0.0)
+            member_monthly.append(
+                {
+                    "member": member.name,
+                    "values": [float(value) for value in member_month.tolist()],
+                }
+            )
+
+            weekly_group = timeline.groupby("week_num")[key].sum()
+            weeks_sorted = sorted(weekly_group.index.tolist())
+            member_weekly.append(
+                {
+                    "member": member.name,
+                    "weeks": weeks_sorted,
+                    "values": [float(weekly_group.get(week, 0.0)) for week in weeks_sorted],
+                }
+            )
+
+        weekly_totals = (
+            timeline.groupby("week_num")[["community_allocated_kwh", "production_total_kwh", "remaining_consumption_kwh"]]
+            .sum()
+            .reset_index()
+            .sort_values("week_num")
+        )
+
+        samples = timeline[timeline["community_allocated_kwh"] > 0].head(6)
+        if samples.empty:
+            samples = timeline.head(3)
+
+        sample_rows = []
+        for row in samples.itertuples():
+            record = {
+                "timestamp": getattr(row, "timestamp").isoformat() if hasattr(getattr(row, "timestamp"), "isoformat") else str(getattr(row, "timestamp")),
+                "production": float(getattr(row, "production_total_kwh", 0.0)),
+                "consumption": float(getattr(row, "consumption_total_kwh", 0.0)),
+                "allocated": float(getattr(row, "community_allocated_kwh", 0.0)),
+                "remaining_production": float(getattr(row, "remaining_production_kwh", 0.0)),
+                "remaining_consumption": float(getattr(row, "remaining_consumption_kwh", 0.0)),
+                "members": [],
+            }
+            for member in members_with_series:
+                community_key = f"member_{member.id}_community_kwh"
+                external_key = f"member_{member.id}_external_kwh"
+                prod_unused_key = f"member_{member.id}_production_unused_kwh"
+                record["members"].append(
+                    {
+                        "name": member.name,
+                        "community": float(getattr(row, community_key, 0.0)),
+                        "external": float(getattr(row, external_key, 0.0)),
+                        "unused_prod": float(getattr(row, prod_unused_key, 0.0)),
+                    }
+                )
+            sample_rows.append(record)
+
+        iteration_chart = [
+            {
+                "label": f"Itération {stat.order} — {key_labels.get(stat.key_type, stat.key_type)}",
+                "value": float(stat.allocated_kwh),
+            }
+            for stat in evaluation.iteration_stats
+        ]
+
+        return {
+            "has_data": True,
+            "months": month_labels,
+            "monthly_totals": [
+                {
+                    "label": label,
+                    "production": float(monthly.iloc[idx]["production_total_kwh"]),
+                    "community": float(monthly.iloc[idx]["community_allocated_kwh"]),
+                    "remaining_production": float(monthly.iloc[idx]["remaining_production_kwh"]),
+                    "remaining_consumption": float(monthly.iloc[idx]["remaining_consumption_kwh"]),
+                }
+                for idx, label in enumerate(month_labels)
+            ],
+            "member_monthly": member_monthly,
+            "weekly_totals": [
+                {
+                    "week": int(row.week_num),
+                    "community": float(row.community_allocated_kwh),
+                    "production": float(row.production_total_kwh),
+                    "remaining_consumption": float(row.remaining_consumption_kwh),
+                }
+                for row in weekly_totals.itertuples()
+            ],
+            "member_weekly": member_weekly,
+            "iteration_chart": iteration_chart,
+            "samples": sample_rows,
+        }
+
     if timeseries_df is not None and not timeseries_df.empty:
         for scenario in scenarios:
             iteration_payload = build_iteration_configs(
@@ -626,6 +752,7 @@ def project_stage2(request, project_id):
                     "preview": preview_records,
                     "iterations": iteration_display,
                     "warnings": evaluation.warnings,
+                    "viz_payload": json.dumps(build_stage2_visuals(evaluation)),
                 }
             )
     elif scenarios and load_error:
