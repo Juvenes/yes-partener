@@ -1,10 +1,33 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
+
+def _random_color():
+    """Generate a pleasant pastel-like color for tag pills."""
+
+    import random
+
+    base = random.randint(80, 200)
+    r = base
+    g = min(220, base + random.randint(-20, 35))
+    b = min(230, base + random.randint(10, 50))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+class Tag(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    color = models.CharField(max_length=7, default=_random_color)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
 # ---- GLOBAL SHARED PROFILE ----
 class Dataset(models.Model):
     name = models.CharField(max_length=200, unique=True)
-    tags = models.JSONField(default=list, blank=True)
+    tags = models.ManyToManyField(Tag, blank=True, related_name="datasets")
     source_file = models.FileField(upload_to="datasets/source/")
     normalized_file = models.FileField(upload_to="datasets/normalized/")
     metadata = models.JSONField(blank=True, null=True)
@@ -17,7 +40,7 @@ class Dataset(models.Model):
         return self.name
 
     def tag_list(self):
-        return [tag for tag in (self.tags or []) if tag]
+        return list(self.tags.all())
 
 # ---- PROJECT & MEMBERS ----
 class Project(models.Model):
@@ -36,6 +59,7 @@ class Member(models.Model):
     dataset = models.ForeignKey(Dataset, on_delete=models.PROTECT, related_name="members", null=True, blank=True)
     name = models.CharField("Name", max_length=200)
     utility = models.CharField("Utility", max_length=200, blank=True)
+    tags = models.ManyToManyField(Tag, blank=True, related_name="members")
 
     annual_consumption_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])
     annual_production_kwh = models.FloatField(blank=True, null=True, validators=[MinValueValidator(0.0)])

@@ -22,8 +22,17 @@
         <label>Nom</label>
         <input class="input" type="text" name="name" required>
 
-        <label>Tags (séparés par des virgules)</label>
-        <input class="input" type="text" name="tags" placeholder="solaire, bureau, 2023">
+        <label>Tags existants</label>
+        <select class="input" name="tags" multiple size="5">
+          {% for tag in all_tags %}
+            <option value="{{ tag.id }}">{{ tag.name }}</option>
+          {% empty %}
+            <option disabled>Aucun tag</option>
+          {% endfor %}
+        </select>
+
+        <label>Créer des tags (séparés par des virgules)</label>
+        <input class="input" type="text" name="new_tags" placeholder="solaire, bureau, 2023">
 
         <label>Fichier (CSV ou Excel)</label>
         <input class="input" type="file" name="source_file" accept=".csv,.xls,.xlsx" required>
@@ -36,7 +45,15 @@
       <h3>Recherche</h3>
       <form method="get" action="{% url 'datasets' %}">
         <input class="input" type="search" name="q" value="{{ query }}" placeholder="Nom ou tag…">
-        <button class="btn" type="submit">Filtrer</button>
+        <label style="margin-top:.35rem; display:block;">Filtrer par tags</label>
+        <select class="input" name="tags" multiple size="5">
+          {% for tag in all_tags %}
+            <option value="{{ tag.name }}" {% if tag.name in selected_tags %}selected{% endif %}>{{ tag.name }}</option>
+          {% empty %}
+            <option disabled>Aucun tag</option>
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit" style="margin-top:.5rem;">Filtrer</button>
       </form>
     </div>
   </div>
@@ -57,13 +74,15 @@
           <tr>
             <td>{{ dataset.name }}</td>
             <td>
-              {% if dataset.tags %}
-                {% for tag in dataset.tags %}
-                  <span style="display:inline-block;background:#eef;padding:0.2rem 0.5rem;border-radius:6px;margin-right:0.25rem;">{{ tag }}</span>
-                {% endfor %}
-              {% else %}
-                <span class="muted">—</span>
-              {% endif %}
+              {% with dataset.tags.all as ds_tags %}
+                {% if ds_tags|length %}
+                  {% for tag in ds_tags %}
+                    <span style="display:inline-block;background: {{ tag.color }}; color: #0d47a1; padding:0.2rem 0.6rem; border-radius:8px; margin-right:0.3rem; font-weight:600;">{{ tag.name }}</span>
+                  {% endfor %}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              {% endwith %}
             </td>
             <td>
               {% if dataset.metadata %}

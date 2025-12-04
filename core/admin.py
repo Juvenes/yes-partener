@@ -6,6 +6,7 @@ from .models import (
     GlobalParameter,
     StageTwoScenario,
     StageThreeScenario,
+    Tag,
 )
 
 @admin.register(Project)
@@ -47,3 +48,9 @@ class StageThreeScenarioAdmin(admin.ModelAdmin):
     )
     list_filter = ("project",)
     search_fields = ("name", "project__name")
+
+
+@admin.register(Tag)
+class TagAdmin(admin.ModelAdmin):
+    list_display = ("name", "color")
+    search_fields = ("name",)

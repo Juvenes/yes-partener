@@ -1,10 +1,11 @@
 from django.core.files.base import ContentFile
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
 import pandas as pd
 
 from .forms import StageThreeTariffForm
-from .models import Dataset, Member, Project
+from .models import Dataset, Member, Project, Tag
 from .stage2 import StageTwoIterationConfig, evaluate_sharing
 from .stage3 import build_member_tariffs, compute_baselines
 from .timeseries import build_indexed_template, parse_member_timeseries
@@ -74,3 +75,24 @@ class StageTwoEqualIterationTests(TestCase):
         self.assertAlmostEqual(allocations["A"], 10.0)
         self.assertAlmostEqual(allocations["B"], 30.0)
         self.assertAlmostEqual(allocations["C"], 60.0)
+
+
+class TaggingTests(TestCase):
+    def test_member_and_dataset_tags_attach_and_reuse(self):
+        project = Project.objects.create(name="Demo")
+        dataset = Dataset.objects.create(
+            name="DS",
+            source_file=SimpleUploadedFile("src.csv", b"timestamp,consumption\n"),
+            normalized_file=SimpleUploadedFile("norm.xlsx", b"binary"),
+        )
+
+        solar = Tag.objects.create(name="solaire", color="#aaccee")
+        member = Member.objects.create(project=project, name="Alice", dataset=dataset)
+
+        dataset.tags.add(solar)
+        new_tag, _ = Tag.objects.get_or_create(name="bureau")
+        member.tags.add(solar, new_tag)
+
+        self.assertIn(solar, dataset.tags.all())
+        self.assertEqual(member.tags.count(), 2)
+        self.assertIn("bureau", list(member.tags.values_list("name", flat=True)))

@@ -4,7 +4,7 @@ from django.http import HttpResponseBadRequest, HttpResponse
 from dataclasses import asdict
 from typing import Dict, List
 from django.db.models import Q
-from .models import Project, Member, Dataset, GlobalParameter, StageTwoScenario
+from .models import Project, Member, Dataset, GlobalParameter, StageTwoScenario, Tag
 from .forms import (
     ProjectForm,
     MemberForm,
@@ -50,6 +50,20 @@ def _parse_float(value, default=0.0):
         return default
 
 
+def _parse_tag_names(raw):
+    if not raw:
+        return []
+    return [tag.strip() for tag in raw.split(",") if tag and tag.strip()]
+
+
+def _get_or_create_tags(tag_names):
+    tags = []
+    for name in tag_names:
+        tag, _ = Tag.objects.get_or_create(name=name)
+        tags.append(tag)
+    return tags
+
+
 # Simplified project list view
 def project_list(request):
     projects = Project.objects.all()
@@ -66,12 +80,18 @@ def project_list(request):
 # Central dataset management page
 def dataset_list(request):
     query = request.GET.get("q", "").strip()
+    selected_tags = request.GET.getlist("tags") or _parse_tag_names(request.GET.get("tags", ""))
     datasets = Dataset.objects.all().order_by("name")
     if query:
         datasets = datasets.filter(
-            Q(name__icontains=query) | Q(tags__icontains=query)
+            Q(name__icontains=query) | Q(tags__name__icontains=query)
         )
+    if selected_tags:
+        datasets = datasets.filter(tags__name__in=selected_tags).distinct()
+    if query or selected_tags:
+        datasets = datasets.distinct()
     dataset_form = DatasetForm()
+    dataset_form.fields["tags"].queryset = Tag.objects.all()
     return render(
         request,
         "core/datasets.html",
@@ -79,6 +99,8 @@ def dataset_list(request):
             "datasets": datasets,
             "dataset_form": dataset_form,
             "query": query,
+            "all_tags": Tag.objects.all(),
+            "selected_tags": selected_tags,
         },
     )
 
@@ -123,12 +145,12 @@ def dataset_create(request):
     df.to_excel(normalized_buffer, index=False)
     normalized_buffer.seek(0)
 
-    tags_raw = form.cleaned_data.get("tags") or ""
-    tag_list = [tag.strip() for tag in tags_raw.split(",") if tag.strip()]
+    existing_tags = list(form.cleaned_data.get("tags") or [])
+    new_tag_names = _parse_tag_names(form.cleaned_data.get("new_tags"))
+    new_tags = _get_or_create_tags(new_tag_names)
 
     dataset = Dataset(
         name=form.cleaned_data["name"],
-        tags=tag_list,
         metadata=asdict(parse_result.metadata),
     )
 
@@ -140,6 +162,7 @@ def dataset_create(request):
         save=False,
     )
     dataset.save()
+    dataset.tags.add(*existing_tags, *new_tags)
 
     totals = parse_result.metadata.totals or {}
     messages.success(
@@ -216,9 +239,13 @@ def project_create(request):
 
 def project_detail(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
+    selected_tags = request.GET.getlist("tags") or _parse_tag_names(request.GET.get("tags", ""))
     members = project.members.all().select_related("dataset")
+    if selected_tags:
+        members = members.filter(tags__name__in=selected_tags).distinct()
     member_form = MemberForm()
     member_form.fields["dataset"].queryset = Dataset.objects.all()
+    member_form.fields["tags"].queryset = Tag.objects.all()
     datasets = Dataset.objects.all()
     return render(
         request,
@@ -228,6 +255,8 @@ def project_detail(request, project_id):
             "members": members,
             "member_form": member_form,
             "datasets": datasets,
+            "all_tags": Tag.objects.all(),
+            "selected_tags": selected_tags,
         },
     )
 
@@ -236,6 +265,7 @@ def member_create(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     form = MemberForm(request.POST)
     form.fields["dataset"].queryset = Dataset.objects.all()
+    form.fields["tags"].queryset = Tag.objects.all()
     if not form.is_valid():
         messages.error(request, f"Formulaire invalide : {form.errors.as_json()}")
         return redirect("project_detail", project_id=project.id)
@@ -252,6 +282,10 @@ def member_create(request, project_id):
         member.annual_production_kwh = _parse_float(totals.get("production_kwh"))
 
     member.save()
+    existing_tags = list(form.cleaned_data.get("tags") or [])
+    new_tag_names = _parse_tag_names(form.cleaned_data.get("new_tags"))
+    new_tags = _get_or_create_tags(new_tag_names)
+    member.tags.add(*existing_tags, *new_tags)
 
     row_count = metadata.get("row_count") if isinstance(metadata, dict) else None
     messages.success(

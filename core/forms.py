@@ -1,5 +1,5 @@
 from django import forms
-from .models import Project, Member, Dataset, GlobalParameter, StageTwoScenario
+from .models import Project, Member, Dataset, GlobalParameter, StageTwoScenario, Tag
 
 class ProjectForm(forms.ModelForm):
     class Meta:
@@ -7,6 +7,12 @@ class ProjectForm(forms.ModelForm):
         fields = ["name"]
 
 class MemberForm(forms.ModelForm):
+    new_tags = forms.CharField(
+        required=False,
+        help_text="Nouveaux tags séparés par des virgules",
+        widget=forms.TextInput(attrs={"placeholder": "bureau, solaire"}),
+    )
+
     class Meta:
         model = Member
         fields = [
@@ -15,13 +21,28 @@ class MemberForm(forms.ModelForm):
             "utility",
             "annual_consumption_kwh",
             "annual_production_kwh",
+            "tags",
         ]
+        widgets = {
+            "tags": forms.SelectMultiple(attrs={"size": 5}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["tags"].queryset = Tag.objects.all()
 class DatasetForm(forms.ModelForm):
-    tags = forms.CharField(required=False, help_text="Séparez les tags par des virgules")
+    tags = forms.ModelMultipleChoiceField(
+        queryset=Tag.objects.all(), required=False, widget=forms.SelectMultiple(attrs={"size": 6})
+    )
+    new_tags = forms.CharField(
+        required=False,
+        help_text="Nouveaux tags séparés par des virgules",
+        widget=forms.TextInput(attrs={"placeholder": "solaire, bureau, 2023"}),
+    )
 
     class Meta:
         model = Dataset
-        fields = ["name", "tags", "source_file"]
+        fields = ["name", "tags", "new_tags", "source_file"]
 
 class GlobalParameterForm(forms.ModelForm):
     class Meta:
