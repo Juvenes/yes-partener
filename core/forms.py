@@ -179,7 +179,7 @@ class StageThreeTariffForm(forms.ModelForm):
             "injection_price_eur_per_kwh",
         ]
         widgets = {
-            field: forms.NumberInput(attrs={"step": "0.001", "min": "0"})
+            field: forms.NumberInput(attrs={"step": "0.0001", "min": "0"})
             for field in fields
         }
 
@@ -195,7 +195,7 @@ class CommunityOptimizationForm(forms.Form):
         required=False,
         min_value=0.0,
         initial=0.0,
-        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+        widget=forms.NumberInput(attrs={"step": "0.0001", "min": "0"}),
     )
     community_type = forms.ChoiceField(
         label="Type de communauté",
@@ -206,11 +206,11 @@ class CommunityOptimizationForm(forms.Form):
         label="Distribution réduite (€/kWh)",
         required=False,
         min_value=0.0,
-        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+        widget=forms.NumberInput(attrs={"step": "0.0001", "min": "0"}),
     )
     reduced_transport_eur_per_kwh = forms.FloatField(
         label="Transport réduit (€/kWh)",
         required=False,
         min_value=0.0,
-        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+        widget=forms.NumberInput(attrs={"step": "0.0001", "min": "0"}),
     )
