@@ -23,34 +23,13 @@ urlpatterns = [
         v.stage2_scenario_csv,
         name="stage2_scenario_csv",
     ),
-    path(
-        "projects/<int:project_id>/stage3/scenarios/create/",
-        v.stage3_scenario_create,
-        name="stage3_scenario_create",
-    ),
-    path(
-        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/update/",
-        v.stage3_scenario_update,
-        name="stage3_scenario_update",
-    ),
-    path(
-        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/delete/",
-        v.stage3_scenario_delete,
-        name="stage3_scenario_delete",
-    ),
-    path(
-        "projects/<int:project_id>/stage3/scenarios/<int:scenario_id>/trace/",
-        v.stage3_scenario_trace,
-        name="stage3_scenario_trace",
-    ),
-
     # New dedicated pages
-    path("profiles/", v.profile_list, name="profiles"),
+    path("datasets/", v.dataset_list, name="datasets"),
+    path("datasets/create/", v.dataset_create, name="dataset_create"),
     path("global-parameters/", v.global_parameter_list, name="global_parameters"),
     path("ingestion-templates/", v.template_helper, name="template_helper"),
 
     # Keep create views, but they will redirect differently
-    path("profiles/create/", v.profile_create, name="profile_create"),
     path("global-params/create/", v.global_parameter_create, name="global_parameter_create"),
 
     # CSV template

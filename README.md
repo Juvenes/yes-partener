@@ -10,33 +10,16 @@ Many companies with renewable energy sources (like solar panels or wind turbines
 
 ## 3. Phase 1: Features
 
-Data Ingestion & Management
+### Unified data ingestion
 
-The platform is designed to be flexible, accepting data in two primary formats:
+All interval datasets are uploaded from a single page. Each CSV/Excel file is parsed, normalized on a common calendar (month, week, weekday, quarter-hour index) and stored as a downloadable Excel export. Tags replace ad‑hoc labels so datasets can be searched and filtered easily.
 
-Detailed Interval Data (CSV Upload):
+### Template
 
-Companies can upload a CSV file containing their production or consumption data at 15-minute intervals over a 24-hour period.
+A downloadable CSV template is provided to ensure formatting is correct. Headers are:
 
+```
+Date+Quart time,consumption,injection
+```
 
-A downloadable CSV template is provided to ensure data is formatted correctly. That is the energy usage by a compagny (have 0 in production if don't generate or for who that generate sometime have  Consommation 0 and X production meaning over producted, )
-
-CSV Template Format:
-
-Time,Production,Consommation
-00:00,0.15,0
-00:15,0.12,0
-...
-08:00,0,0.66
-08:15,0,0.71
-
-
-Annual Data with Profiles:
-
-For companies that only provide an annual production or consumption total, the platform uses a "Profile" system.
-
-A Profile is a standardized 24-hour energy curve (e.g., "Office," "Factory") scaled to 1 kWh.
-
-The platform multiplies the company's annual total by the selected profile to generate estimated interval data.
-
-Users can create and manage these profiles on a dedicated page.
+Values are expressed in kWh on a 15-minute step. Injection can be left blank when not applicable.

@@ -1,647 +1,410 @@
-"""Helper objects and algorithms powering Stage 3 cost simulations."""
+"""Helper objects and algorithms for Stage 3 cost optimisation."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
-from django.utils.functional import cached_property
+import pandas as pd
 
 
 @dataclass
-class MemberCostInput:
+class MemberTariff:
     member_id: int
     name: str
-    consumption_kwh: float
-    current_price_eur_per_kwh: float
-    current_fixed_fee_eur: float
-    injection_kwh: float
+    utility: str
+    supplier_energy_price_eur_per_kwh: float
+    distribution_tariff_eur_per_kwh: float
+    transport_tariff_eur_per_kwh: float
+    green_support_eur_per_kwh: float
+    access_fee_eur_per_kwh: float
+    special_excise_eur_per_kwh: float
+    energy_contribution_eur_per_kwh: float
     injection_price_eur_per_kwh: float
-    utility: str = ""
-
-    def current_cost(self) -> float:
-        energy_cost = self.consumption_kwh * self.current_price_eur_per_kwh
-        injection_revenue = self.injection_kwh * self.injection_price_eur_per_kwh
-        return energy_cost + self.current_fixed_fee_eur - injection_revenue
-
-    @cached_property
-    def cost_per_kwh(self) -> float:
-        if self.consumption_kwh <= 0:
-            return 0.0
-        return self.current_cost() / self.consumption_kwh
-
-
-@dataclass(frozen=True)
-class CostComponent:
-    """Reference information for explaining electricity invoices."""
-
-    key: str
-    label: str
-    value_eur_per_mwh: float
-    description: str
-    adjustable: bool
 
     @property
-    def value_eur_per_kwh(self) -> float:
-        return round(self.value_eur_per_mwh / 1000.0, 6)
-
-
-@dataclass(frozen=True)
-class CostGuideSection:
-    key: str
-    title: str
-    subtitle: str
-    components: List[CostComponent]
-    notes: List[str]
-
-    @property
-    def total_eur_per_mwh(self) -> float:
-        return round(sum(component.value_eur_per_mwh for component in self.components), 4)
-
-    @property
-    def total_eur_per_kwh(self) -> float:
-        return round(self.total_eur_per_mwh / 1000.0, 6)
-
-
-@dataclass
-class ScenarioParameters:
-    scenario_id: int
-    name: str
-    community_price_eur_per_kwh: Optional[float]
-    price_min_eur_per_kwh: Optional[float]
-    price_max_eur_per_kwh: Optional[float]
-    community_fixed_fee_total_eur: float
-    community_per_member_fee_eur: float
-    community_variable_fee_eur_per_kwh: float
-    community_injection_price_eur_per_kwh: Optional[float]
-    tariff_context: str
-
-
-@dataclass
-class PriceEnvelope:
-    derived_min: Optional[float]
-    derived_max: Optional[float]
-    floor: Optional[float]
-    ceiling: Optional[float]
-    effective_min: Optional[float]
-    effective_max: Optional[float]
-
-    def is_defined(self) -> bool:
-        return (
-            self.effective_min is not None
-            and self.effective_max is not None
-            and self.effective_min <= self.effective_max
+    def total_unit_price_eur_per_kwh(self) -> float:
+        return round(
+            self.supplier_energy_price_eur_per_kwh
+            + self.distribution_tariff_eur_per_kwh
+            + self.transport_tariff_eur_per_kwh
+            + self.green_support_eur_per_kwh
+            + self.access_fee_eur_per_kwh
+            + self.special_excise_eur_per_kwh
+            + self.energy_contribution_eur_per_kwh,
+            6,
         )
 
+    @property
+    def total_unit_price_eur_per_mwh(self) -> float:
+        return round(self.total_unit_price_eur_per_kwh * 1000.0, 3)
+
 
 @dataclass
-class MemberCostBreakdown:
+class BaselineResult:
     member_id: int
     name: str
-    share: float
-    community_kwh: float
-    supplier_kwh: float
-    current_cost: float
-    community_cost: float
-    delta_cost: float
-    cost_per_kwh_now: float
-    cost_per_kwh_community: float
-    community_energy_cost: float
-    community_variable_cost: float
-    supplier_energy_cost: float
-    shared_fee_component: float
-    per_member_fee_component: float
-    fixed_fee_component: float
-    injection_revenue: float
-    current_energy_cost: float
-    utility: str = ""
+    utility: str
+    consumption_kwh: float
+    production_kwh: float
+    grid_import_kwh: float
+    grid_export_kwh: float
+    unit_price_eur_per_kwh: float
+    cost_eur: float
 
 
 @dataclass
-class ScenarioEvaluation:
-    scenario_id: int
-    scenario_name: str
-    price_eur_per_kwh: float
-    member_breakdowns: List[MemberCostBreakdown]
-    total_current_cost: float
+class FlowBreakdown:
+    member_id: int
+    community_import_kwh: float = 0.0
+    community_export_kwh: float = 0.0
+    grid_import_kwh: float = 0.0
+    grid_export_kwh: float = 0.0
+
+
+@dataclass
+class CommunityOutcome:
+    member_id: int
+    name: str
+    utility: str
+    baseline_cost_eur: float
+    community_cost_eur: float
+    delta_eur: float
+    savings_pct: float
+    baseline_unit_price_eur_per_kwh: float
+    community_unit_price_eur_per_kwh: float
+    consumption_kwh: float
+    community_import_kwh: float
+    grid_import_kwh: float
+    community_export_kwh: float
+    grid_export_kwh: float
+
+
+@dataclass
+class OptimizationSummary:
+    optimal_price_eur_per_kwh: Optional[float]
+    candidates_tested: int
+    feasible_candidates: int
+    min_injection: Optional[float]
+    max_supplier: Optional[float]
+    member_outcomes: List[CommunityOutcome]
+    total_baseline_cost: float
     total_community_cost: float
-    total_consumption_kwh: float
-    total_community_consumption_kwh: float
-    total_supplier_consumption_kwh: float
-
-    @property
-    def savings(self) -> float:
-        return self.total_current_cost - self.total_community_cost
-
-    @property
-    def average_cost_per_kwh(self) -> float:
-        if self.total_consumption_kwh <= 0:
-            return 0.0
-        return self.total_community_cost / self.total_consumption_kwh
+    total_delta: float
 
 
-@dataclass
-class OptimizationResult:
-    objective: str
-    evaluation: ScenarioEvaluation
-
-
-def reference_cost_guide() -> Dict[str, CostGuideSection]:
-    """Return static explanatory data for Stage 3 based on Belgian reference values."""
-
-    traditional_components = [
-        CostComponent(
-            key="energy",
-            label="Énergie (fournisseur)",
-            value_eur_per_mwh=130.8,
-            description="Achat de l'électricité auprès du fournisseur classique.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="distribution",
-            label="Tarif de distribution (DSO)",
-            value_eur_per_mwh=101.8,
-            description="Utilisation du réseau local basse tension.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="transport",
-            label="Tarif de transport (TSO)",
-            value_eur_per_mwh=28.1,
-            description="Acheminement haute tension par Elia.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="green",
-            label="Soutien énergie verte",
-            value_eur_per_mwh=28.38,
-            description="Certificats verts et obligations régionales.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="connection",
-            label="Redevance d'accès",
-            value_eur_per_mwh=0.75,
-            description="Autres surcharges régulées au kWh.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="excise",
-            label="Accise spéciale",
-            value_eur_per_mwh=14.21,
-            description="Taxe fédérale sur l'électricité.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="levy",
-            label="Contribution énergie",
-            value_eur_per_mwh=1.92,
-            description="Contribution additionnelle régionale.",
-            adjustable=False,
-        ),
-    ]
-
-    community_components = [
-        CostComponent(
-            key="energy",
-            label="Prix interne communauté",
-            value_eur_per_mwh=70.0,
-            description="Prix cible fixé par la communauté (ajustable).",
-            adjustable=True,
-        ),
-        CostComponent(
-            key="distribution",
-            label="Tarif distribution (réseau public)",
-            value_eur_per_mwh=101.8,
-            description="Toujours dû lorsque l'énergie transite par le réseau public.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="transport",
-            label="Tarif transport",
-            value_eur_per_mwh=28.1,
-            description="Part haute tension inchangée.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="green",
-            label="Soutien énergie verte",
-            value_eur_per_mwh=28.38,
-            description="Certificats verts toujours dus.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="connection",
-            label="Redevance d'accès",
-            value_eur_per_mwh=0.75,
-            description="Autres redevances régulées.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="excise",
-            label="Accise spéciale",
-            value_eur_per_mwh=14.21,
-            description="Taxe fédérale identique.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="levy",
-            label="Contribution énergie",
-            value_eur_per_mwh=1.92,
-            description="Contribution régionale.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="community_variable",
-            label="Frais variable communauté",
-            value_eur_per_mwh=9.0,
-            description="Gestion / maintenance mutualisée (ajustable).",
-            adjustable=True,
-        ),
-    ]
-
-    same_site_components = [
-        CostComponent(
-            key="energy",
-            label="Prix interne communauté",
-            value_eur_per_mwh=70.0,
-            description="Prix interne cible.",
-            adjustable=True,
-        ),
-        CostComponent(
-            key="distribution",
-            label="Distribution réduite (site unique)",
-            value_eur_per_mwh=20.36,
-            description="Tarif DSO réduit pour flux internes.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="transport",
-            label="Transport réduit",
-            value_eur_per_mwh=5.62,
-            description="Tarif TSO réduit dans le bâtiment.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="green",
-            label="Soutien énergie verte",
-            value_eur_per_mwh=28.38,
-            description="Obligation certificats verts.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="connection",
-            label="Redevance d'accès",
-            value_eur_per_mwh=0.75,
-            description="Autres redevances.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="excise",
-            label="Accise spéciale",
-            value_eur_per_mwh=14.21,
-            description="Taxe fédérale.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="levy",
-            label="Contribution énergie",
-            value_eur_per_mwh=1.92,
-            description="Contribution régionale.",
-            adjustable=False,
-        ),
-        CostComponent(
-            key="community_variable",
-            label="Frais variable communauté",
-            value_eur_per_mwh=9.0,
-            description="Gestion mutualisée (ajustable).",
-            adjustable=True,
-        ),
-    ]
-
-    return {
-        "traditional": CostGuideSection(
-            key="traditional",
-            title="Facture fournisseur traditionnelle",
-            subtitle="Répartition indicative (référence Wallonie 2025).",
-            components=traditional_components,
-            notes=[
-                "Les valeurs sont indicatives et doivent être adaptées selon le contrat réel.",
-                "La TVA à 6 % s'applique sur l'ensemble de ces composantes.",
-            ],
-        ),
-        "community_grid": CostGuideSection(
-            key="community_grid",
-            title="Communauté via réseau public",
-            subtitle="Les tarifs régulés restent dus, seule la composante énergie est ajustable.",
-            components=community_components,
-            notes=[
-                "Le prix interne et les frais de communauté peuvent être ajustés pour équilibrer la répartition des gains.",
-                "Les tarifs régulés (DSO, TSO, taxes) ne peuvent pas être optimisés : ils servent de borne basse pour le prix final.",
-            ],
-        ),
-        "community_same_site": CostGuideSection(
-            key="community_same_site",
-            title="Communauté site unique / même bâtiment",
-            subtitle="Exemple de réduction des tarifs réseau lorsque la communauté partage une infrastructure interne.",
-            components=same_site_components,
-            notes=[
-                "Les réductions réseau dépendent du gestionnaire et du type d'installation : à confirmer pour chaque dossier.",
-                "Les taxes et surcharges restent dues : elles fixent le minimum réglementaire.",
-            ],
-        ),
-    }
-
-
-def build_member_inputs(members: Iterable) -> List[MemberCostInput]:
-    inputs: List[MemberCostInput] = []
+def build_member_tariffs(members: Sequence) -> List[MemberTariff]:
+    tariffs: List[MemberTariff] = []
     for member in members:
-        consumption = _safe_float(
-            member.annual_consumption_kwh,
-            (member.timeseries_metadata or {}).get("totals", {}).get("consumption_kwh"),
-        )
-        inputs.append(
-            MemberCostInput(
+        tariffs.append(
+            MemberTariff(
                 member_id=member.id,
                 name=member.name,
-                consumption_kwh=max(consumption, 0.0),
-                current_price_eur_per_kwh=_safe_float(member.current_unit_price_eur_per_kwh, 0.0),
-                current_fixed_fee_eur=_safe_float(member.current_fixed_fee_eur, 0.0),
-                injection_kwh=_safe_float(member.injection_annual_kwh, 0.0),
-                injection_price_eur_per_kwh=_safe_float(member.injection_unit_price_eur_per_kwh, 0.0),
                 utility=getattr(member, "utility", ""),
+                supplier_energy_price_eur_per_kwh=float(
+                    getattr(member, "supplier_energy_price_eur_per_kwh", 0.0) or 0.0
+                ),
+                distribution_tariff_eur_per_kwh=float(
+                    getattr(member, "distribution_tariff_eur_per_kwh", 0.0) or 0.0
+                ),
+                transport_tariff_eur_per_kwh=float(
+                    getattr(member, "transport_tariff_eur_per_kwh", 0.0) or 0.0
+                ),
+                green_support_eur_per_kwh=float(
+                    getattr(member, "green_support_eur_per_kwh", 0.0) or 0.0
+                ),
+                access_fee_eur_per_kwh=float(
+                    getattr(member, "access_fee_eur_per_kwh", 0.0) or 0.0
+                ),
+                special_excise_eur_per_kwh=float(
+                    getattr(member, "special_excise_eur_per_kwh", 0.0) or 0.0
+                ),
+                energy_contribution_eur_per_kwh=float(
+                    getattr(member, "energy_contribution_eur_per_kwh", 0.0) or 0.0
+                ),
+                injection_price_eur_per_kwh=float(
+                    getattr(member, "injection_price_eur_per_kwh", 0.0) or 0.0
+                ),
             )
         )
-    return inputs
+    return tariffs
 
 
-def build_scenario_parameters(scenario) -> ScenarioParameters:
-    return ScenarioParameters(
-        scenario_id=scenario.id,
-        name=scenario.name,
-        community_price_eur_per_kwh=scenario.community_price_eur_per_kwh,
-        price_min_eur_per_kwh=scenario.price_min_eur_per_kwh,
-        price_max_eur_per_kwh=scenario.price_max_eur_per_kwh,
-        community_fixed_fee_total_eur=scenario.community_fixed_fee_total_eur,
-        community_per_member_fee_eur=scenario.community_per_member_fee_eur,
-        community_variable_fee_eur_per_kwh=scenario.community_variable_fee_eur_per_kwh,
-        community_injection_price_eur_per_kwh=scenario.community_injection_price_eur_per_kwh,
-        tariff_context=scenario.tariff_context,
-    )
+def compute_baselines(timeseries: pd.DataFrame, tariffs: Sequence[MemberTariff]) -> Dict[int, BaselineResult]:
+    results: Dict[int, BaselineResult] = {}
+    if timeseries is None or timeseries.empty:
+        for tariff in tariffs:
+            results[tariff.member_id] = BaselineResult(
+                member_id=tariff.member_id,
+                name=tariff.name,
+                utility=tariff.utility,
+                consumption_kwh=0.0,
+                production_kwh=0.0,
+                grid_import_kwh=0.0,
+                grid_export_kwh=0.0,
+                unit_price_eur_per_kwh=tariff.total_unit_price_eur_per_kwh,
+                cost_eur=0.0,
+            )
+        return results
 
+    for tariff in tariffs:
+        member_df = timeseries[timeseries["member_id"] == tariff.member_id]
+        if member_df.empty:
+            results[tariff.member_id] = BaselineResult(
+                member_id=tariff.member_id,
+                name=tariff.name,
+                utility=tariff.utility,
+                consumption_kwh=0.0,
+                production_kwh=0.0,
+                grid_import_kwh=0.0,
+                grid_export_kwh=0.0,
+                unit_price_eur_per_kwh=tariff.total_unit_price_eur_per_kwh,
+                cost_eur=0.0,
+            )
+            continue
 
-def derive_price_envelope(
-    inputs: Sequence[MemberCostInput], params: ScenarioParameters
-) -> PriceEnvelope:
-    valid_costs = [
-        member.current_price_eur_per_kwh
-        for member in inputs
-        if member.consumption_kwh > 0 and member.current_price_eur_per_kwh > 0
-    ]
-
-    if not valid_costs:
-        return PriceEnvelope(
-            derived_min=None,
-            derived_max=None,
-            floor=params.price_min_eur_per_kwh,
-            ceiling=params.price_max_eur_per_kwh,
-            effective_min=None,
-            effective_max=None,
+        consumption = float(member_df["consumption"].sum())
+        production = float(member_df["production"].sum())
+        grid_import = float((member_df["consumption"] - member_df["production"]).clip(lower=0).sum())
+        grid_export = float((member_df["production"] - member_df["consumption"]).clip(lower=0).sum())
+        cost = grid_import * tariff.total_unit_price_eur_per_kwh - grid_export * tariff.injection_price_eur_per_kwh
+        results[tariff.member_id] = BaselineResult(
+            member_id=tariff.member_id,
+            name=tariff.name,
+            utility=tariff.utility,
+            consumption_kwh=consumption,
+            production_kwh=production,
+            grid_import_kwh=grid_import,
+            grid_export_kwh=grid_export,
+            unit_price_eur_per_kwh=tariff.total_unit_price_eur_per_kwh,
+            cost_eur=cost,
         )
+    return results
 
-    derived_min = min(valid_costs)
-    derived_max = max(valid_costs)
 
-    effective_min = derived_min
-    effective_max = derived_max
+def compute_flows(timeseries: pd.DataFrame, member_ids: Sequence[int]) -> Dict[int, FlowBreakdown]:
+    flows: Dict[int, FlowBreakdown] = {member_id: FlowBreakdown(member_id=member_id) for member_id in member_ids}
+    if timeseries is None or timeseries.empty:
+        return flows
 
-    if params.price_min_eur_per_kwh is not None:
-        effective_min = max(effective_min, params.price_min_eur_per_kwh)
-    if params.price_max_eur_per_kwh is not None:
-        effective_max = min(effective_max, params.price_max_eur_per_kwh)
+    consumption = timeseries.pivot_table(index="timestamp", columns="member_id", values="consumption", fill_value=0.0)
+    production = timeseries.pivot_table(index="timestamp", columns="member_id", values="production", fill_value=0.0)
 
-    if effective_min > effective_max:
-        effective_min = effective_max = None
+    for ts in consumption.index:
+        cons_row = consumption.loc[ts]
+        prod_row = production.loc[ts]
+        net = prod_row - cons_row
+        surplus = net[net > 0]
+        deficit = -net[net < 0]
 
-    return PriceEnvelope(
-        derived_min=derived_min,
-        derived_max=derived_max,
-        floor=params.price_min_eur_per_kwh,
-        ceiling=params.price_max_eur_per_kwh,
-        effective_min=effective_min,
-        effective_max=effective_max,
+        total_surplus = float(surplus.sum())
+        total_deficit = float(deficit.sum())
+        shared = min(total_surplus, total_deficit)
+
+        for member_id in member_ids:
+            d = float(deficit.get(member_id, 0.0)) if total_deficit > 0 else 0.0
+            s = float(surplus.get(member_id, 0.0)) if total_surplus > 0 else 0.0
+
+            if d > 0 and total_deficit > 0 and shared > 0:
+                community_import = shared * (d / total_deficit)
+            else:
+                community_import = 0.0
+
+            if s > 0 and total_surplus > 0 and shared > 0:
+                community_export = shared * (s / total_surplus)
+            else:
+                community_export = 0.0
+
+            flows[member_id].community_import_kwh += community_import
+            flows[member_id].grid_import_kwh += max(d - community_import, 0.0)
+            flows[member_id].community_export_kwh += community_export
+            flows[member_id].grid_export_kwh += max(s - community_export, 0.0)
+
+    return flows
+
+
+def _community_unit_price(
+    tariff: MemberTariff,
+    *,
+    community_price_eur_per_kwh: float,
+    community_fee_eur_per_kwh: float,
+    community_type: str,
+    reduced_distribution: Optional[float] = None,
+    reduced_transport: Optional[float] = None,
+) -> float:
+    distribution = tariff.distribution_tariff_eur_per_kwh
+    transport = tariff.transport_tariff_eur_per_kwh
+    if community_type == "single_building":
+        if reduced_distribution is not None:
+            distribution = reduced_distribution
+        if reduced_transport is not None:
+            transport = reduced_transport
+
+    return round(
+        community_price_eur_per_kwh
+        + community_fee_eur_per_kwh
+        + distribution
+        + transport
+        + tariff.green_support_eur_per_kwh
+        + tariff.access_fee_eur_per_kwh
+        + tariff.special_excise_eur_per_kwh
+        + tariff.energy_contribution_eur_per_kwh,
+        6,
     )
 
 
-def price_candidates(
-    envelope: PriceEnvelope,
-    *,
-    resolution: float = 0.0005,
-    max_points: int = 200,
-) -> List[float]:
-    if not envelope.is_defined():
-        return []
-
-    start = envelope.effective_min or 0.0
-    end = envelope.effective_max or 0.0
-    if end - start < resolution:
-        return [round(start, 6)]
-
-    span = end - start
-    step = max(resolution, span / max_points)
-    prices: List[float] = []
-    current = start
-    while current <= end + 1e-9:
-        prices.append(round(current, 6))
-        current += step
-    if prices[-1] != round(end, 6):
-        prices.append(round(end, 6))
-    return prices
-
-
-def evaluate_scenario(
-    inputs: Sequence[MemberCostInput],
-    params: ScenarioParameters,
+def evaluate_candidate(
     *,
     price: float,
-) -> ScenarioEvaluation:
-    if price is None or price < 0:
-        raise ValueError("Un prix communautaire valide est requis pour l'évaluation Stage 3")
-
-    member_breakdowns: List[MemberCostBreakdown] = []
-    total_current_cost = 0.0
+    tariffs: Sequence[MemberTariff],
+    baselines: Dict[int, BaselineResult],
+    flows: Dict[int, FlowBreakdown],
+    community_fee_eur_per_kwh: float,
+    community_type: str,
+    reduced_distribution: Optional[float],
+    reduced_transport: Optional[float],
+) -> Tuple[List[CommunityOutcome], float, float]:
+    outcomes: List[CommunityOutcome] = []
+    total_baseline_cost = 0.0
     total_community_cost = 0.0
-    total_consumption = 0.0
 
-    participant_count = len(inputs)
-    community_fixed_per_member = (
-        params.community_fixed_fee_total_eur / participant_count if participant_count else 0.0
-    )
-
-    for member in inputs:
-        community_kwh = max(member.consumption_kwh, 0.0)
-        supplier_kwh = 0.0
-        total_consumption += community_kwh
-
-        current_cost = member.current_cost()
-        community_energy_cost = community_kwh * price
-        community_variable_cost = community_kwh * params.community_variable_fee_eur_per_kwh
-        supplier_energy_cost = supplier_kwh * member.current_price_eur_per_kwh
-        per_member_fee_component = params.community_per_member_fee_eur
-        shared_fee_component = community_fixed_per_member
-        fixed_fee_component = member.current_fixed_fee_eur
-        injection_price = (
-            params.community_injection_price_eur_per_kwh
-            if params.community_injection_price_eur_per_kwh is not None
-            else member.injection_price_eur_per_kwh
+    for tariff in tariffs:
+        baseline = baselines.get(tariff.member_id)
+        flow = flows.get(tariff.member_id, FlowBreakdown(member_id=tariff.member_id))
+        community_unit_price = _community_unit_price(
+            tariff,
+            community_price_eur_per_kwh=price,
+            community_fee_eur_per_kwh=community_fee_eur_per_kwh,
+            community_type=community_type,
+            reduced_distribution=reduced_distribution,
+            reduced_transport=reduced_transport,
         )
-        injection_revenue = member.injection_kwh * injection_price
 
+        baseline_cost = baseline.cost_eur if baseline else 0.0
         community_cost = (
-            community_energy_cost
-            + community_variable_cost
-            + supplier_energy_cost
-            + shared_fee_component
-            + per_member_fee_component
-            + fixed_fee_component
-            - injection_revenue
+            flow.community_import_kwh * community_unit_price
+            + flow.grid_import_kwh * tariff.total_unit_price_eur_per_kwh
+            - flow.community_export_kwh * price
+            - flow.grid_export_kwh * tariff.injection_price_eur_per_kwh
         )
+        delta = baseline_cost - community_cost
+        savings_pct = 0.0 if baseline_cost == 0 else (delta / baseline_cost) * 100.0
 
-        cost_per_kwh_now = 0.0 if member.consumption_kwh <= 0 else current_cost / member.consumption_kwh
-        cost_per_kwh_comm = (
-            0.0 if member.consumption_kwh <= 0 else community_cost / member.consumption_kwh
-        )
-
-        member_breakdowns.append(
-            MemberCostBreakdown(
-                member_id=member.member_id,
-                name=member.name,
-                share=1.0,
-                community_kwh=community_kwh,
-                supplier_kwh=supplier_kwh,
-                current_cost=current_cost,
-                community_cost=community_cost,
-                delta_cost=current_cost - community_cost,
-                cost_per_kwh_now=cost_per_kwh_now,
-                cost_per_kwh_community=cost_per_kwh_comm,
-                community_energy_cost=community_energy_cost,
-                community_variable_cost=community_variable_cost,
-                supplier_energy_cost=supplier_energy_cost,
-                shared_fee_component=shared_fee_component,
-                per_member_fee_component=per_member_fee_component,
-                fixed_fee_component=fixed_fee_component,
-                injection_revenue=injection_revenue,
-                current_energy_cost=member.consumption_kwh * member.current_price_eur_per_kwh,
-                utility=member.utility,
+        outcomes.append(
+            CommunityOutcome(
+                member_id=tariff.member_id,
+                name=tariff.name,
+                utility=tariff.utility,
+                baseline_cost_eur=baseline_cost,
+                community_cost_eur=community_cost,
+                delta_eur=delta,
+                savings_pct=savings_pct,
+                baseline_unit_price_eur_per_kwh=tariff.total_unit_price_eur_per_kwh,
+                community_unit_price_eur_per_kwh=community_unit_price,
+                consumption_kwh=baseline.consumption_kwh if baseline else 0.0,
+                community_import_kwh=flow.community_import_kwh,
+                grid_import_kwh=flow.grid_import_kwh,
+                community_export_kwh=flow.community_export_kwh,
+                grid_export_kwh=flow.grid_export_kwh,
             )
         )
 
-        total_current_cost += current_cost
+        total_baseline_cost += baseline_cost
         total_community_cost += community_cost
 
-    return ScenarioEvaluation(
-        scenario_id=params.scenario_id,
-        scenario_name=params.name,
-        price_eur_per_kwh=price,
-        member_breakdowns=member_breakdowns,
-        total_current_cost=total_current_cost,
-        total_community_cost=total_community_cost,
-        total_consumption_kwh=total_consumption,
-        total_community_consumption_kwh=total_consumption,
-        total_supplier_consumption_kwh=0.0,
-    )
+    return outcomes, total_baseline_cost, total_community_cost
 
 
-def optimize_group_benefit(
-    inputs: Sequence[MemberCostInput],
-    params: ScenarioParameters,
-    envelope: PriceEnvelope,
-) -> Optional[OptimizationResult]:
-    if params.community_price_eur_per_kwh is not None:
-        evaluation = evaluate_scenario(inputs, params, price=params.community_price_eur_per_kwh)
-        return OptimizationResult(objective="group_benefit", evaluation=evaluation)
-
-    candidates = price_candidates(envelope)
-    if not candidates:
+def optimise_internal_price(
+    *,
+    tariffs: Sequence[MemberTariff],
+    timeseries: pd.DataFrame,
+    community_fee_eur_per_kwh: float,
+    community_type: str,
+    reduced_distribution: Optional[float] = None,
+    reduced_transport: Optional[float] = None,
+) -> Optional[OptimizationSummary]:
+    if not tariffs:
         return None
 
-    best_evaluation: Optional[ScenarioEvaluation] = None
-    for candidate in candidates:
-        evaluation = evaluate_scenario(inputs, params, price=candidate)
-        if best_evaluation is None or evaluation.savings > best_evaluation.savings + 1e-6:
-            best_evaluation = evaluation
-    if best_evaluation is None:
-        return None
-    return OptimizationResult(objective="group_benefit", evaluation=best_evaluation)
+    min_injection = max(t.injection_price_eur_per_kwh for t in tariffs)
+    max_supplier = max(t.supplier_energy_price_eur_per_kwh for t in tariffs)
 
+    if min_injection > max_supplier:
+        return OptimizationSummary(
+            optimal_price_eur_per_kwh=None,
+            candidates_tested=0,
+            feasible_candidates=0,
+            min_injection=min_injection,
+            max_supplier=max_supplier,
+            member_outcomes=[],
+            total_baseline_cost=0.0,
+            total_community_cost=0.0,
+            total_delta=0.0,
+        )
 
-def optimize_everyone_wins(
-    inputs: Sequence[MemberCostInput],
-    params: ScenarioParameters,
-    envelope: PriceEnvelope,
-) -> Optional[OptimizationResult]:
-    candidates = []
-    if params.community_price_eur_per_kwh is not None:
-        candidates = [params.community_price_eur_per_kwh]
+    span = max_supplier - min_injection
+    if span <= 0:
+        candidates = [round(min_injection, 6)]
     else:
-        candidates = price_candidates(envelope)
+        step = max(span * 0.01, 0.0001)
+        current = min_injection
+        candidates = []
+        while current <= max_supplier + 1e-9:
+            candidates.append(round(current, 6))
+            current += step
+        if candidates[-1] != round(max_supplier, 6):
+            candidates.append(round(max_supplier, 6))
 
-    if not candidates:
-        return None
+    baselines = compute_baselines(timeseries, tariffs)
+    flows = compute_flows(timeseries, [t.member_id for t in tariffs])
 
-    feasible: List[ScenarioEvaluation] = []
+    best_price = None
+    best_outcomes: List[CommunityOutcome] = []
+    best_totals: Tuple[float, float] = (0.0, 0.0)
+    feasible = 0
+
     for candidate in candidates:
-        evaluation = evaluate_scenario(inputs, params, price=candidate)
-        if all(b.delta_cost >= -1e-6 for b in evaluation.member_breakdowns):
-            feasible.append(evaluation)
-
-    if not feasible:
-        return None
-
-    feasible.sort(key=lambda ev: (ev.savings, ev.price_eur_per_kwh))
-    best = feasible[-1]
-    return OptimizationResult(objective="everyone_wins", evaluation=best)
-
-
-def generate_trace_rows(
-    inputs: Sequence[MemberCostInput],
-    params: ScenarioParameters,
-    prices: Sequence[float],
-) -> List[Dict[str, float]]:
-    rows: List[Dict[str, float]] = []
-    for price in prices:
-        evaluation = evaluate_scenario(inputs, params, price=price)
-        for breakdown in evaluation.member_breakdowns:
-            rows.append(
-                {
-                    "member_id": breakdown.member_id,
-                    "member_name": breakdown.name,
-                    "community_price_eur_per_kwh": evaluation.price_eur_per_kwh,
-                    "consumption_kwh": breakdown.community_kwh,
-                    "current_cost_eur": breakdown.current_cost,
-                    "community_cost_eur": breakdown.community_cost,
-                    "delta_cost_eur": breakdown.delta_cost,
-                    "community_energy_cost_eur": breakdown.community_energy_cost,
-                    "community_variable_cost_eur": breakdown.community_variable_cost,
-                    "community_fixed_fee_component_eur": breakdown.shared_fee_component,
-                    "community_per_member_fee_eur": breakdown.per_member_fee_component,
-                    "fixed_fee_component_eur": breakdown.fixed_fee_component,
-                    "supplier_energy_cost_eur": breakdown.supplier_energy_cost,
-                    "injection_revenue_eur": breakdown.injection_revenue,
-                    "group_total_current_cost_eur": evaluation.total_current_cost,
-                    "group_total_community_cost_eur": evaluation.total_community_cost,
-                    "group_total_savings_eur": evaluation.savings,
-                    "group_total_consumption_kwh": evaluation.total_consumption_kwh,
-                }
-            )
-    return rows
-
-
-def _safe_float(*values: Optional[float]) -> float:
-    for value in values:
-        try:
-            if value is None:
-                continue
-            return float(value)
-        except (TypeError, ValueError):
+        outcomes, baseline_cost, community_cost = evaluate_candidate(
+            price=candidate,
+            tariffs=tariffs,
+            baselines=baselines,
+            flows=flows,
+            community_fee_eur_per_kwh=community_fee_eur_per_kwh,
+            community_type=community_type,
+            reduced_distribution=reduced_distribution,
+            reduced_transport=reduced_transport,
+        )
+        if any(out.delta_eur < -1e-6 for out in outcomes):
             continue
-    return 0.0
+        feasible += 1
+        total_delta = baseline_cost - community_cost
+        if best_price is None or total_delta > (best_totals[0] - best_totals[1]) + 1e-6:
+            best_price = candidate
+            best_outcomes = outcomes
+            best_totals = (baseline_cost, community_cost)
+
+    if best_price is None:
+        return OptimizationSummary(
+            optimal_price_eur_per_kwh=None,
+            candidates_tested=len(candidates),
+            feasible_candidates=feasible,
+            min_injection=min_injection,
+            max_supplier=max_supplier,
+            member_outcomes=[],
+            total_baseline_cost=sum(b.cost_eur for b in baselines.values()),
+            total_community_cost=0.0,
+            total_delta=0.0,
+        )
+
+    total_baseline_cost, total_community_cost = best_totals
+    return OptimizationSummary(
+        optimal_price_eur_per_kwh=best_price,
+        candidates_tested=len(candidates),
+        feasible_candidates=feasible,
+        min_injection=min_injection,
+        max_supplier=max_supplier,
+        member_outcomes=best_outcomes,
+        total_baseline_cost=total_baseline_cost,
+        total_community_cost=total_community_cost,
+        total_delta=total_baseline_cost - total_community_cost,
+    )

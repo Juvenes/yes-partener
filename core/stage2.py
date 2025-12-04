@@ -59,12 +59,13 @@ def load_project_timeseries(members: Sequence) -> Tuple[pd.DataFrame, List[str]]
     timestamps: set = set()
 
     for member in members:
-        if not getattr(member, "timeseries_file", None):
-            warnings.append(_("%(member)s : aucun fichier de série temporelle n'est associé.") % {"member": member.name})
+        dataset = getattr(member, "dataset", None)
+        if not dataset or not getattr(dataset, "normalized_file", None):
+            warnings.append(_("%(member)s : aucun dataset normalisé n'est associé.") % {"member": member.name})
             continue
 
         try:
-            parse_result = parse_member_timeseries(member.timeseries_file.path)
+            parse_result = parse_member_timeseries(dataset.normalized_file.path)
         except (TimeseriesError, FileNotFoundError) as exc:
             warnings.append(f"{member.name} : {exc}")
             continue
@@ -180,6 +181,45 @@ def evaluate_sharing(
         for member_id in unique_member_ids:
             production.setdefault(member_id, 0.0)
             consumption.setdefault(member_id, 0.0)
+
+        total_demand = sum(consumption.values())
+        if total_demand <= EPSILON:
+            for member_id in unique_member_ids:
+                stats_member = stats[member_id]
+                stats_member["total_production"] += production.get(member_id, 0.0)
+                stats_member["total_consumption"] += consumption.get(member_id, 0.0)
+                stats_member["community_consumption"] += 0.0
+                stats_member["external_consumption"] += 0.0
+                stats_member["shared_production"] += 0.0
+                stats_member["unused_production"] += production.get(member_id, 0.0)
+
+            timeline_records.append(
+                {
+                    "timestamp": timestamp,
+                    "production_total_kwh": sum(production.values()),
+                    "consumption_total_kwh": total_demand,
+                    "community_allocated_kwh": 0.0,
+                    "remaining_production_kwh": sum(production.values()),
+                    "remaining_consumption_kwh": 0.0,
+                    **{
+                        f"member_{member_id}_community_kwh": 0.0
+                        for member_id in unique_member_ids
+                    },
+                    **{
+                        f"member_{member_id}_external_kwh": consumption.get(member_id, 0.0)
+                        for member_id in unique_member_ids
+                    },
+                    **{
+                        f"member_{member_id}_production_shared_kwh": 0.0
+                        for member_id in unique_member_ids
+                    },
+                    **{
+                        f"member_{member_id}_production_unused_kwh": production.get(member_id, 0.0)
+                        for member_id in unique_member_ids
+                    },
+                }
+            )
+            continue
 
         original_production = production.copy()
         original_consumption = consumption.copy()

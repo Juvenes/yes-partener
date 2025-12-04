@@ -51,6 +51,9 @@
     .warning-box { margin-top: 1.2rem; background: #fff8e1; color: #bf6b00; padding: .85rem 1.1rem; border-radius: 10px; }
     .preview-table { font-size: .85rem; }
     .empty-state { text-align: center; padding: 2rem; color: #607d8b; background: #fff; border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(96, 125, 139, 0.12); margin-top: 1.5rem; }
+    .chart-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-top:1rem; }
+    .chart-card { background:#f9fbff; border-radius:12px; padding:1rem; box-shadow: inset 0 0 0 1px rgba(13,71,161,0.08); }
+    .sample-table { font-size:.85rem; }
     @media (max-width: 720px) {
       .form-grid { grid-template-columns: 1fr; }
       .scenario-header { flex-direction: column; align-items: flex-start; }
@@ -263,6 +266,29 @@
               </div>
             </div>
 
+            <div class="chart-grid">
+              <div class="chart-card">
+                <h4 style="margin:.2rem 0 0;">Partage mensuel par membre</h4>
+                <p class="muted" style="margin:.25rem 0 .5rem;">Empilement des allocations communautaires par clé sur le calendrier normalisé.</p>
+                <canvas id="chart-monthly-{{ card.scenario.id }}" height="200"></canvas>
+              </div>
+              <div class="chart-card">
+                <h4 style="margin:.2rem 0 0;">Flux mensuels</h4>
+                <p class="muted" style="margin:.25rem 0 .5rem;">Production totale vs énergie partagée, reliquats et consommation restante.</p>
+                <canvas id="chart-balance-{{ card.scenario.id }}" height="200"></canvas>
+              </div>
+              <div class="chart-card">
+                <h4 style="margin:.2rem 0 0;">Contribution des itérations</h4>
+                <p class="muted" style="margin:.25rem 0 .5rem;">Énergie allouée par clé (égale, pourcentage, proportionnelle).</p>
+                <canvas id="chart-iterations-{{ card.scenario.id }}" height="200"></canvas>
+              </div>
+              <div class="chart-card">
+                <h4 style="margin:.2rem 0 0;">Hebdomadaire</h4>
+                <p class="muted" style="margin:.25rem 0 .5rem;">Vue agrégée par semaine ISO pour repérer les pics de demande et d'injection.</p>
+                <canvas id="chart-weekly-{{ card.scenario.id }}" height="200"></canvas>
+              </div>
+            </div>
+
             <h4 style="margin-top:1.8rem;">Répartition par membre</h4>
             <table>
               <thead>
@@ -317,6 +343,24 @@
               </details>
             {% endif %}
 
+            <h4 style="margin-top:1.6rem;">Cas illustratifs</h4>
+            <p class="muted">Exemples de pas de temps où le partage est actif : qui consomme, combien est pris et ce qu'il reste.</p>
+            <table class="sample-table">
+              <thead>
+                <tr>
+                  <th>Horodatage</th>
+                  <th>Prod. (kWh)</th>
+                  <th>Conso. (kWh)</th>
+                  <th>Partagée (kWh)</th>
+                  <th>Prod. restante</th>
+                  <th>Conso. restante</th>
+                  <th>Détails membres</th>
+                </tr>
+              </thead>
+              <tbody id="samples-{{ card.scenario.id }}"></tbody>
+            </table>
+            <script type="application/json" id="viz-{{ card.scenario.id }}">{{ card.viz_payload|safe }}</script>
+
             {% if card.warnings %}
               <div class="warning-box" style="margin-top:1.2rem;">
                 <strong>Observations :</strong>
@@ -333,4 +377,128 @@
     {% endif %}
   </section>
 </body>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function() {
+    const palette = ['#0d47a1', '#1976d2', '#42a5f5', '#66bb6a', '#00897b', '#ffb300', '#8e24aa', '#ef6c00'];
+
+    function renderSamples(samples, targetId) {
+      const tbody = document.getElementById(targetId);
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      samples.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        const cells = [row.timestamp, row.production.toFixed(2), row.consumption.toFixed(2), row.allocated.toFixed(2), row.remaining_production.toFixed(2), row.remaining_consumption.toFixed(2)];
+        cells.forEach(value => {
+          const td = document.createElement('td');
+          td.textContent = value;
+          tr.appendChild(td);
+        });
+        const memberTd = document.createElement('td');
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = 'Répartition membres';
+        details.appendChild(summary);
+        const list = document.createElement('ul');
+        list.style.margin = '0.35rem 0 0';
+        list.style.paddingLeft = '1rem';
+        row.members.forEach(m => {
+          const li = document.createElement('li');
+          li.textContent = `${m.name} : +${m.community.toFixed(2)} kWh / reste conso ${m.external.toFixed(2)} kWh / prod inutilisée ${m.unused_prod.toFixed(2)} kWh`;
+          list.appendChild(li);
+        });
+        details.appendChild(list);
+        memberTd.appendChild(details);
+        tr.appendChild(memberTd);
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderCharts(payload, scenarioId) {
+      if (!payload.has_data) return;
+      const monthLabels = payload.months;
+
+      const monthlyCtx = document.getElementById(`chart-monthly-${scenarioId}`);
+      if (monthlyCtx && payload.member_monthly.length) {
+        new Chart(monthlyCtx, {
+          type: 'bar',
+          data: {
+            labels: monthLabels,
+            datasets: payload.member_monthly.map((series, idx) => ({
+              label: series.member,
+              data: series.values,
+              backgroundColor: palette[idx % palette.length],
+              stack: 'community'
+            })),
+          },
+          options: {
+            responsive: true,
+            scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: 'kWh partagés' } } }
+          }
+        });
+      }
+
+      const balanceCtx = document.getElementById(`chart-balance-${scenarioId}`);
+      if (balanceCtx) {
+        new Chart(balanceCtx, {
+          type: 'line',
+          data: {
+            labels: monthLabels,
+            datasets: [
+              { label: 'Production', data: payload.monthly_totals.map(v => v.production), borderColor: '#1b5e20', backgroundColor: 'rgba(27,94,32,0.1)', tension: 0.2 },
+              { label: 'Partagée', data: payload.monthly_totals.map(v => v.community), borderColor: '#0d47a1', backgroundColor: 'rgba(13,71,161,0.15)', tension: 0.2 },
+              { label: 'Prod. restante', data: payload.monthly_totals.map(v => v.remaining_production), borderColor: '#ef6c00', backgroundColor: 'rgba(239,108,0,0.15)', tension: 0.2 },
+              { label: 'Conso. restante', data: payload.monthly_totals.map(v => v.remaining_consumption), borderColor: '#c62828', backgroundColor: 'rgba(198,40,40,0.12)', tension: 0.2 },
+            ]
+          },
+          options: { responsive: true, interaction: { mode: 'index', intersect: false }, stacked: false }
+        });
+      }
+
+      const iterationCtx = document.getElementById(`chart-iterations-${scenarioId}`);
+      if (iterationCtx && payload.iteration_chart.length) {
+        new Chart(iterationCtx, {
+          type: 'doughnut',
+          data: {
+            labels: payload.iteration_chart.map(v => v.label),
+            datasets: [{
+              data: payload.iteration_chart.map(v => v.value),
+              backgroundColor: payload.iteration_chart.map((_, idx) => palette[idx % palette.length])
+            }]
+          },
+          options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+      }
+
+      const weeklyCtx = document.getElementById(`chart-weekly-${scenarioId}`);
+      if (weeklyCtx && payload.weekly_totals.length) {
+        const weekLabels = payload.weekly_totals.map(v => `S${v.week}`);
+        new Chart(weeklyCtx, {
+          type: 'bar',
+          data: {
+            labels: weekLabels,
+            datasets: [
+              { label: 'Partagée', data: payload.weekly_totals.map(v => v.community), backgroundColor: '#0d47a1' },
+              { label: 'Production', data: payload.weekly_totals.map(v => v.production), backgroundColor: 'rgba(27,94,32,0.7)' },
+              { label: 'Conso. restante', data: payload.weekly_totals.map(v => v.remaining_consumption), backgroundColor: '#c62828' },
+            ]
+          },
+          options: { responsive: true, interaction: { mode: 'index', intersect: false }, scales: { y: { stacked: false, title: { display: true, text: 'kWh' } } } }
+        });
+      }
+
+      renderSamples(payload.samples, `samples-${scenarioId}`);
+    }
+
+    document.querySelectorAll('script[id^="viz-"]').forEach(node => {
+      try {
+        const payload = JSON.parse(node.textContent || '{}');
+        const scenarioId = node.id.replace('viz-', '');
+        renderCharts(payload, scenarioId);
+      } catch (err) {
+        console.error('Impossible de charger les visualisations Stage 2', err);
+      }
+    });
+  })();
+</script>
 </html>
