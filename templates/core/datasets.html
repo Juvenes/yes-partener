@@ -56,9 +56,9 @@
             <input class="input" type="search" name="q" value="{{ query }}" placeholder="Rechercher un dataset ou un tag…">
             <div class="filter-tags">
               {% for tag in all_tags %}
-                {% with is_selected=tag.name in selected_tags %}
-                  <label class="tag-pill {% if is_selected %}checked{% endif %}">
-                    <input type="checkbox" name="tags" value="{{ tag.name }}" {% if is_selected %}checked{% endif %}>
+                {% with tag.name as tag_name %}
+                  <label class="tag-pill {% if tag_name in selected_tags %}checked{% endif %}">
+                    <input type="checkbox" name="tags" value="{{ tag.name }}" {% if tag_name in selected_tags %}checked{% endif %}>
                     <span class="chip" style="background: {{ tag.color }}33; border: 1px solid {{ tag.color }};">{{ tag.name }}</span>
                   </label>
                 {% endwith %}
