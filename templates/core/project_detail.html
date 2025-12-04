@@ -18,9 +18,13 @@
     .messages li.error { background: #fef2f2; color: #b91c1c; }
     .messages li.warning { background: #fff7ed; color: #c2410c; }
     .filter-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
+    .tag-chip { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .65rem; border-radius: 999px; border: 1px solid var(--border); background: #eef2ff; color: #111827; font-weight: 600; }
+    .tag-chip strong { display: inline-block; min-width: 18px; height: 18px; border-radius: 999px; }
+    .tag-chip button { border: none; background: transparent; cursor: pointer; font-size: 1rem; color: #475569; }
+    .tag-chip button:hover { color: #0f172a; }
+    .tag-input-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
     .tag-pill { display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .55rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
     .tag-pill input { display: none; }
-    .tag-pill.checked { border-color: #4338ca; background: var(--pill); color: var(--pill-text); }
   </style>
 
   {% if messages %}
@@ -53,19 +57,29 @@
           <h2 style="margin: 0;">Membres</h2>
           <p class="muted" style="margin:.15rem 0 0;">Vue type Notion : filtres par tags multiples et datasets affichés avec leurs métadonnées.</p>
         </div>
-        <form method="get" action="" style="min-width: 260px;">
+        <form method="get" action="" style="min-width: 260px;" id="member-filter-form">
           <label class="muted" style="font-weight: 600;">Filtrer par tags</label>
-          <div class="filter-tags">
+          <div class="tag-input-row">
+            <input class="input" list="project-tags" id="member-tag-search" placeholder="Ajouter un tag…">
+            <button class="btn secondary" type="button" id="member-clear-tags" aria-label="Réinitialiser les tags">✕ Effacer</button>
+          </div>
+          <datalist id="project-tags">
             {% for tag in all_tags %}
-              {% with is_selected=tag.name in selected_tags %}
-                <label class="tag-pill {% if is_selected %}checked{% endif %}">
-                  <input type="checkbox" name="tags" value="{{ tag.name }}" {% if is_selected %}checked{% endif %}>
-                  <span class="chip" style="background: {{ tag.color }}33; border: 1px solid {{ tag.color }};">{{ tag.name }}</span>
-                </label>
-              {% endwith %}
-            {% empty %}
-              <span class="muted">Aucun tag pour le moment.</span>
+              <option value="{{ tag.name }}"></option>
             {% endfor %}
+          </datalist>
+          <div class="filter-tags" id="member-selected-tags">
+            {% for tag_name in selected_tags %}
+              <span class="tag-chip" data-tag="{{ tag_name }}">
+                <strong style="background:#4338ca;"></strong>
+                <span>{{ tag_name }}</span>
+                <button type="button" aria-label="Supprimer {{ tag_name }}">×</button>
+                <input type="hidden" name="tags" value="{{ tag_name }}">
+              </span>
+            {% endfor %}
+            {% if not selected_tags %}
+              <span class="muted" id="member-no-tags">Aucun tag sélectionné.</span>
+            {% endif %}
           </div>
           <div style="display:flex; gap:.5rem; align-items:center; margin-top:.45rem;">
             <button class="btn" type="submit">Filtrer</button>
@@ -183,4 +197,71 @@
       </form>
     </div>
   </div>
+  <script>
+    (function() {
+      const input = document.getElementById('member-tag-search');
+      const selectedContainer = document.getElementById('member-selected-tags');
+      const clearBtn = document.getElementById('member-clear-tags');
+      const emptyState = document.getElementById('member-no-tags');
+
+      function showEmpty(show) {
+        if (!emptyState) { return; }
+        emptyState.style.display = show ? 'inline' : 'none';
+      }
+
+      function addHidden(tagName) {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'tags';
+        hidden.value = tagName;
+        return hidden;
+      }
+
+      function addTag(tagName) {
+        if (!tagName) return;
+        const existing = selectedContainer.querySelector(`[data-tag="${CSS.escape(tagName)}"]`);
+        if (existing) { input.value = ''; return; }
+        const chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.dataset.tag = tagName;
+        chip.innerHTML = `<strong></strong><span>${tagName}</span><button type="button" aria-label="Supprimer ${tagName}">×</button>`;
+        chip.querySelector('strong').style.background = '#4338ca';
+        chip.appendChild(addHidden(tagName));
+        selectedContainer.appendChild(chip);
+        chip.querySelector('button').addEventListener('click', () => removeTag(tagName));
+        showEmpty(false);
+        input.value = '';
+      }
+
+      function removeTag(tagName) {
+        const chip = selectedContainer.querySelector(`[data-tag="${CSS.escape(tagName)}"]`);
+        if (chip) {
+          chip.remove();
+        }
+        if (!selectedContainer.querySelector('.tag-chip')) {
+          showEmpty(true);
+        }
+      }
+
+      input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          addTag(input.value.trim());
+        }
+      });
+
+      clearBtn?.addEventListener('click', () => {
+        selectedContainer.querySelectorAll('.tag-chip').forEach((chip) => chip.remove());
+        showEmpty(true);
+        input.value = '';
+      });
+
+      selectedContainer?.querySelectorAll('.tag-chip button').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          const tagName = e.target.closest('.tag-chip')?.dataset.tag;
+          if (tagName) removeTag(tagName);
+        });
+      });
+    })();
+  </script>
 {% endblock %}
