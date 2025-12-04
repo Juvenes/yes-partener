@@ -239,7 +239,9 @@ def evaluate_sharing(
                 )
                 continue
 
-            allocations, unused_pool = _allocate_to_consumers(pool, consumption, weights)
+            allocations, unused_pool = _allocate_to_consumers(
+                pool, consumption, weights, config.key_type
+            )
             allocated_total = sum(allocations.values())
             if allocated_total <= EPSILON:
                 continue
@@ -330,12 +332,48 @@ def _allocate_to_consumers(
     pool: float,
     consumption: Dict[int, float],
     weights: Dict[int, float],
+    key_type: str,
 ) -> Tuple[Dict[int, float], float]:
     allocations = {member_id: 0.0 for member_id in consumption.keys()}
     remaining_pool = float(pool)
     active = {member_id for member_id, demand in consumption.items() if demand > EPSILON and weights.get(member_id, 0.0) > EPSILON}
 
     while remaining_pool > EPSILON and active:
+        if key_type == "equal":
+            equal_share = min(consumption[member_id] - allocations[member_id] for member_id in active)
+            if equal_share <= EPSILON:
+                break
+
+            required = equal_share * len(active)
+            to_remove = []
+            distributed = 0.0
+            if remaining_pool + EPSILON >= required:
+                for member_id in list(active):
+                    allocations[member_id] += equal_share
+                    distributed += equal_share
+                    if consumption[member_id] - allocations[member_id] <= EPSILON:
+                        to_remove.append(member_id)
+            else:
+                partial_share = remaining_pool / len(active)
+                for member_id in list(active):
+                    demand_remaining = consumption[member_id] - allocations[member_id]
+                    allocation = min(partial_share, demand_remaining)
+                    if allocation <= EPSILON:
+                        to_remove.append(member_id)
+                        continue
+                    allocations[member_id] += allocation
+                    distributed += allocation
+                    if demand_remaining - allocation <= EPSILON:
+                        to_remove.append(member_id)
+
+            for member_id in to_remove:
+                active.discard(member_id)
+
+            if distributed <= EPSILON:
+                break
+            remaining_pool -= distributed
+            continue
+
         weight_sum = sum(weights.get(member_id, 0.0) for member_id in active)
         if weight_sum <= EPSILON:
             break

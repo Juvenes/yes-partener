@@ -53,6 +53,7 @@
     .empty-state { text-align: center; padding: 2rem; color: #607d8b; background: #fff; border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(96, 125, 139, 0.12); margin-top: 1.5rem; }
     .chart-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-top:1rem; }
     .chart-card { background:#f9fbff; border-radius:12px; padding:1rem; box-shadow: inset 0 0 0 1px rgba(13,71,161,0.08); }
+    .chart-card.wide { grid-column: 1 / -1; }
     .sample-table { font-size:.85rem; }
     @media (max-width: 720px) {
       .form-grid { grid-template-columns: 1fr; }
@@ -266,6 +267,12 @@
               </div>
             </div>
 
+            <div class="chart-card wide" style="margin-top:1rem;">
+              <h4 style="margin:.2rem 0 0;">Flux pas de 15 minutes</h4>
+              <p class="muted" style="margin:.25rem 0 .5rem;">Visualisation détaillée de la production, du partage communautaire et de la consommation résiduelle pour chaque pas de 15 minutes.</p>
+              <canvas id="chart-quarterly-{{ card.scenario.id }}" height="320"></canvas>
+            </div>
+
             <div class="chart-grid">
               <div class="chart-card">
                 <h4 style="margin:.2rem 0 0;">Partage mensuel par membre</h4>
@@ -417,6 +424,31 @@
     function renderCharts(payload, scenarioId) {
       if (!payload.has_data) return;
       const monthLabels = payload.months;
+
+      const quarterCtx = document.getElementById(`chart-quarterly-${scenarioId}`);
+      if (quarterCtx && (payload.quarterly_series || []).length) {
+        const labels = payload.quarterly_series.map(v => v.timestamp);
+        new Chart(quarterCtx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              { label: 'Production', data: payload.quarterly_series.map(v => v.production), borderColor: '#1b5e20', backgroundColor: 'rgba(27,94,32,0.1)', tension: 0.25, fill: false },
+              { label: 'Partagée', data: payload.quarterly_series.map(v => v.allocated), borderColor: '#0d47a1', backgroundColor: 'rgba(13,71,161,0.1)', tension: 0.25, fill: false },
+              { label: 'Conso. restante', data: payload.quarterly_series.map(v => v.remaining_consumption), borderColor: '#c62828', backgroundColor: 'rgba(198,40,40,0.1)', tension: 0.25, fill: false },
+            ]
+          },
+          options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            maintainAspectRatio: false,
+            scales: {
+              x: { ticks: { autoSkip: true, maxRotation: 0 }, title: { display: true, text: 'Pas de 15 minutes' } },
+              y: { title: { display: true, text: 'kWh' } }
+            }
+          }
+        });
+      }
 
       const monthlyCtx = document.getElementById(`chart-monthly-${scenarioId}`);
       if (monthlyCtx && payload.member_monthly.length) {
