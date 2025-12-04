@@ -3,111 +3,162 @@
 {% block title %}Datasets – Yes-Partner{% endblock %}
 
 {% block content %}
-  <h1>Datasets normalisés</h1>
-  <p class="muted">Importez un seul type de fichier (CSV ou Excel) ; il sera indexé par mois, semaine, jour et quart d'heure.</p>
+  <style>
+    .dataset-page { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 1.5rem; align-items: start; }
+    .dataset-list { display: flex; flex-direction: column; gap: .9rem; margin-top: .75rem; }
+    .dataset-row { display: grid; grid-template-columns: 1fr auto; gap: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+    .dataset-row:hover { box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08); }
+    .tag-grid { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .filter-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; }
+    .tag-pill { display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .55rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
+    .tag-pill input { display: none; }
+    .tag-pill.checked { border-color: #4338ca; background: var(--pill); color: var(--pill-text); }
+    .badge-row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+    .badge { padding: .35rem .65rem; border-radius: 10px; background: #eef2ff; color: #4338ca; font-weight: 600; font-size: .95rem; }
+    .upload-box { border: 1px dashed var(--border); padding: 1rem; border-radius: 12px; background: #f8fafc; }
+    .messages { list-style: none; padding: 0; margin: 0 0 1rem 0; }
+    .messages li { padding: .8rem 1rem; border-radius: 10px; margin-bottom: .5rem; font-weight: 600; }
+    .messages li.success { background: #ecfdf3; color: #065f46; }
+    .messages li.error { background: #fef2f2; color: #b91c1c; }
+    .messages li.warning { background: #fff7ed; color: #c2410c; }
+  </style>
 
-  {% if messages %}
-    <ul class="messages">
-      {% for message in messages %}
-        <li class="{{ message.tags }}">{{ message }}</li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-
-  <div class="grid">
-    <div class="card">
-      <h3>Ajouter un dataset</h3>
-      <form method="post" action="{% url 'dataset_create' %}" enctype="multipart/form-data">
-        {% csrf_token %}
-        <label>Nom</label>
-        <input class="input" type="text" name="name" required>
-
-        <label>Tags existants</label>
-        <select class="input" name="tags" multiple size="5">
-          {% for tag in all_tags %}
-            <option value="{{ tag.id }}">{{ tag.name }}</option>
-          {% empty %}
-            <option disabled>Aucun tag</option>
-          {% endfor %}
-        </select>
-
-        <label>Créer des tags (séparés par des virgules)</label>
-        <input class="input" type="text" name="new_tags" placeholder="solaire, bureau, 2023">
-
-        <label>Fichier (CSV ou Excel)</label>
-        <input class="input" type="file" name="source_file" accept=".csv,.xls,.xlsx" required>
-
-        <button class="btn" type="submit" style="margin-top: 0.75rem;">Importer</button>
-      </form>
-    </div>
-
-    <div class="card">
-      <h3>Recherche</h3>
-      <form method="get" action="{% url 'datasets' %}">
-        <input class="input" type="search" name="q" value="{{ query }}" placeholder="Nom ou tag…">
-        <label style="margin-top:.35rem; display:block;">Filtrer par tags</label>
-        <select class="input" name="tags" multiple size="5">
-          {% for tag in all_tags %}
-            <option value="{{ tag.name }}" {% if tag.name in selected_tags %}selected{% endif %}>{{ tag.name }}</option>
-          {% empty %}
-            <option disabled>Aucun tag</option>
-          {% endfor %}
-        </select>
-        <button class="btn" type="submit" style="margin-top:.5rem;">Filtrer</button>
-      </form>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3>Liste des datasets</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Nom</th>
-          <th>Tags</th>
-          <th>Statistiques</th>
-          <th>Téléchargement</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for dataset in datasets %}
-          <tr>
-            <td>{{ dataset.name }}</td>
-            <td>
-              {% with dataset.tags.all as ds_tags %}
-                {% if ds_tags|length %}
-                  {% for tag in ds_tags %}
-                    <span style="display:inline-block;background: {{ tag.color }}; color: #0d47a1; padding:0.2rem 0.6rem; border-radius:8px; margin-right:0.3rem; font-weight:600;">{{ tag.name }}</span>
-                  {% endfor %}
-                {% else %}
-                  <span class="muted">—</span>
-                {% endif %}
-              {% endwith %}
-            </td>
-            <td>
-              {% if dataset.metadata %}
-                <div class="meta-grid">
-                  <span><strong>Lignes :</strong> {{ dataset.metadata.row_count }}</span>
-                  <span><strong>Consommation :</strong> {{ dataset.metadata.totals.consumption_kwh|floatformat:1 }} kWh</span>
-                  <span><strong>Production :</strong> {{ dataset.metadata.totals.production_kwh|floatformat:1 }} kWh</span>
-                  <span><strong>Granularité :</strong> {% if dataset.metadata.granularity_minutes %}{{ dataset.metadata.granularity_minutes|floatformat:0 }} min{% else %}—{% endif %}</span>
-                </div>
-              {% else %}
-                <span class="muted">—</span>
-              {% endif %}
-            </td>
-            <td>
-              {% if dataset.normalized_file %}
-                <a href="{{ dataset.normalized_file.url }}">Excel normalisé</a>
-              {% else %}
-                <span class="muted">—</span>
-              {% endif %}
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="4" class="muted">Aucun dataset pour l’instant.</td></tr>
+  <div class="stack">
+    {% if messages %}
+      <ul class="messages">
+        {% for message in messages %}
+          <li class="{{ message.tags }}">{{ message }}</li>
         {% endfor %}
-      </tbody>
-    </table>
+      </ul>
+    {% endif %}
+
+    <div class="dataset-page">
+      <div class="card">
+        <div class="stack" style="gap: .6rem;">
+          <div class="pill" style="width: fit-content;">Phase 1 • Bibliothèque</div>
+          <h1 style="margin: 0;">Datasets & tags</h1>
+          <p class="muted" style="margin: 0; max-width: 720px;">Ajoutez vos séries, créez des tags colorés directement depuis le dataset et filtrez la liste par mots-clés ou par tags multiples.</p>
+          <div class="badge-row">
+            <span class="badge">{{ datasets|length }} datasets</span>
+            <span class="badge">{{ all_tags|length }} tags</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: 1.25rem;">
+          <div style="display:flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <div>
+              <h3 style="margin: 0;">Recherche & filtres</h3>
+              <p class="muted" style="margin: .2rem 0 0 0;">Recherchez par nom ou par tags. Les filtres s'empilent pour ressembler à une vue Notion.</p>
+            </div>
+            {% if selected_tags %}<a href="?" class="muted" style="text-decoration:none; font-weight: 600;">Réinitialiser</a>{% endif %}
+          </div>
+          <form method="get" action="{% url 'datasets' %}" class="stack">
+            <input class="input" type="search" name="q" value="{{ query }}" placeholder="Rechercher un dataset ou un tag…">
+            <div class="filter-tags">
+              {% for tag in all_tags %}
+                {% with is_selected=tag.name in selected_tags %}
+                  <label class="tag-pill {% if is_selected %}checked{% endif %}">
+                    <input type="checkbox" name="tags" value="{{ tag.name }}" {% if is_selected %}checked{% endif %}>
+                    <span class="chip" style="background: {{ tag.color }}33; border: 1px solid {{ tag.color }};">{{ tag.name }}</span>
+                  </label>
+                {% endwith %}
+              {% empty %}
+                <span class="muted">Ajoutez un premier tag en important un dataset.</span>
+              {% endfor %}
+            </div>
+            <div style="display:flex; gap:.6rem; align-items:center; flex-wrap: wrap;">
+              <button class="btn" type="submit">Filtrer</button>
+              {% if selected_tags or query %}<span class="muted">{{ datasets|length }} résultat{{ datasets|length|pluralize:"s" }}</span>{% endif %}
+            </div>
+          </form>
+        </div>
+
+        <div class="card" style="margin-top: 1.25rem;">
+          <div style="display:flex; justify-content: space-between; align-items: center; gap: 1rem;">
+            <h3 style="margin: 0;">Datasets</h3>
+            <span class="muted">Chaque ligne affiche les métadonnées clés et les tags colorés.</span>
+          </div>
+          <div class="dataset-list">
+            {% for dataset in datasets %}
+              <div class="dataset-row">
+                <div>
+                  <div style="display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;">
+                    <strong style="font-size: 1.05rem;">{{ dataset.name }}</strong>
+                    {% with dataset.tags.all as ds_tags %}
+                      {% for tag in ds_tags %}
+                        <span class="chip" style="background: {{ tag.color }}33; border: 1px solid {{ tag.color }};">{{ tag.name }}</span>
+                      {% empty %}
+                        <span class="muted">Pas de tag</span>
+                      {% endfor %}
+                    {% endwith %}
+                  </div>
+                  {% if dataset.metadata %}
+                    <div class="meta-grid" style="margin-top:.4rem;">
+                      <span><strong>Lignes :</strong> {{ dataset.metadata.row_count }}</span>
+                      <span><strong>Conso :</strong> {{ dataset.metadata.totals.consumption_kwh|floatformat:1 }} kWh</span>
+                      <span><strong>Prod :</strong> {{ dataset.metadata.totals.production_kwh|floatformat:1 }} kWh</span>
+                      <span><strong>Granularité :</strong> {% if dataset.metadata.granularity_minutes %}{{ dataset.metadata.granularity_minutes|floatformat:0 }} min{% else %}—{% endif %}</span>
+                    </div>
+                  {% else %}
+                    <p class="muted" style="margin:.35rem 0 0;">Métadonnées indisponibles.</p>
+                  {% endif %}
+                </div>
+                <div style="text-align:right; display:flex; flex-direction:column; gap:.35rem; justify-content:center;">
+                  {% if dataset.normalized_file %}
+                    <a href="{{ dataset.normalized_file.url }}" class="btn secondary" style="text-decoration:none;">Excel normalisé</a>
+                  {% else %}
+                    <span class="muted">Fichier normalisé manquant</span>
+                  {% endif %}
+                </div>
+              </div>
+            {% empty %}
+              <div class="dataset-row">
+                <div><strong>Aucun dataset pour l’instant.</strong><p class="muted" style="margin:.25rem 0 0;">Importez votre premier fichier pour lancer la bibliothèque.</p></div>
+                <div></div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="position: sticky; top: 88px;">
+        <h3 style="margin-top:0;">Nouveau dataset</h3>
+        <p class="muted" style="margin-top:.15rem;">Créez les tags directement ici, ils seront réutilisables pour les projets et les filtres.</p>
+        <form method="post" action="{% url 'dataset_create' %}" enctype="multipart/form-data" class="stack">
+          {% csrf_token %}
+          <div>
+            <label>Nom</label>
+            <input class="input" type="text" name="name" placeholder="Bâtiment A – 2024" required>
+          </div>
+
+          <div>
+            <label>Tags existants</label>
+            <div class="filter-tags">
+              {% for tag in all_tags %}
+                <label class="tag-pill">
+                  <input type="checkbox" name="tags" value="{{ tag.id }}">
+                  <span class="chip" style="background: {{ tag.color }}33; border: 1px solid {{ tag.color }};">{{ tag.name }}</span>
+                </label>
+              {% empty %}
+                <span class="muted">Aucun tag pour le moment.</span>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div>
+            <label>Créer des tags (séparés par des virgules)</label>
+            <input class="input" type="text" name="new_tags" placeholder="solaire, bureau, 2023">
+          </div>
+
+          <div class="upload-box">
+            <label>Fichier (CSV ou Excel)</label>
+            <input class="input" type="file" name="source_file" accept=".csv,.xls,.xlsx" required>
+            <p class="muted" style="margin:.4rem 0 0;">Le fichier est indexé automatiquement par mois, semaine, jour et quart d'heure.</p>
+          </div>
+
+          <button class="btn" type="submit">Importer le dataset</button>
+        </form>
+      </div>
+    </div>
   </div>
 {% endblock %}

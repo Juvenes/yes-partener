@@ -26,12 +26,6 @@ urlpatterns = [
     # New dedicated pages
     path("datasets/", v.dataset_list, name="datasets"),
     path("datasets/create/", v.dataset_create, name="dataset_create"),
-    path("global-parameters/", v.global_parameter_list, name="global_parameters"),
-    path("ingestion-templates/", v.template_helper, name="template_helper"),
-
-    # Keep create views, but they will redirect differently
-    path("global-params/create/", v.global_parameter_create, name="global_parameter_create"),
-
     # CSV template
     path("download/timeseries-template.csv", v.csv_template_timeseries, name="csv_template_timeseries"),
 

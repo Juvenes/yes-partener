@@ -1,5 +1,5 @@
 from django import forms
-from .models import Project, Member, Dataset, GlobalParameter, StageTwoScenario, Tag
+from .models import Project, Member, Dataset, StageTwoScenario, Tag
 
 class ProjectForm(forms.ModelForm):
     class Meta:
@@ -43,15 +43,6 @@ class DatasetForm(forms.ModelForm):
     class Meta:
         model = Dataset
         fields = ["name", "tags", "new_tags", "source_file"]
-
-class GlobalParameterForm(forms.ModelForm):
-    class Meta:
-        model = GlobalParameter
-        fields = ["key", "value", "note"]
-        widgets = {
-            "note": forms.TextInput(attrs={"placeholder": "Description (optional)"}),
-        }
-
 
 class StageTwoScenarioForm(forms.ModelForm):
     ITERATION_CHOICES = [

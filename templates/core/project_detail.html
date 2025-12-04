@@ -1,41 +1,27 @@
-<!doctype html>
-<html lang="fr">
-<head>
-    <meta charset="utf-8" />
-    <title>{{ project.name }} – Phase 1 : Datasets</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1200px; background-color: #f9f9f9; }
-    .grid { display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; align-items: start; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.5rem; background-color: #fff; }
-    .input, select { padding: .75rem; border: 1px solid #ccc; border-radius: 8px; width: 100%; box-sizing: border-box; font-size: 1rem; margin-bottom: 0.5rem; }
-    select[multiple] { height: 120px; }
-    .btn { padding: .75rem 1.25rem; border-radius: 8px; border: none; background: #222; color: #fff; cursor: pointer; font-size: 1rem; }
-    .btn-group { display: flex; gap: .75rem; flex-wrap: wrap; }
-    table { width:100%; border-collapse: collapse; font-size: 1.05rem; }
-    th, td { border-bottom: 1px solid #eee; padding: 1rem .5rem; text-align: left; vertical-align: top; }
-    th { font-weight: 600; color: #555; }
-    .muted { color: #666; font-size: .9rem; }
-    .messages { list-style: none; padding: 0; margin-bottom: 1rem; }
-    .messages li { padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; }
-    .messages li.success { background-color: #e8f5e9; color: #2e7d32; }
-    .messages li.error { background-color: #ffebee; color: #c62828; }
-    .file-block { margin-top: .5rem; }
-    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .35rem; margin-top: .5rem; font-size: .9rem; }
-    .meta-grid span { background: #f4f4f8; padding: .4rem .6rem; border-radius: 6px; display: inline-block; }
+{% extends "core/base.html" %}
+
+{% block title %}{{ project.name }} – Phase 1 : Datasets{% endblock %}
+
+{% block content %}
+  <style>
+    .project-hero { display: flex; justify-content: space-between; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; }
+    .project-hero h1 { margin: .15rem 0 .35rem; }
+    .project-actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+    .project-actions a { text-decoration: none; }
+    .project-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .9fr); gap: 1.25rem; align-items: start; }
+    .member-list { display: flex; flex-direction: column; gap: .85rem; }
+    .member-row { display: grid; grid-template-columns: 1fr auto; gap: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+    .member-row:hover { box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08); }
+    .messages { list-style: none; padding: 0; margin: 0 0 1rem 0; }
+    .messages li { padding: .85rem 1rem; border-radius: 10px; margin-bottom: .6rem; font-weight: 600; }
+    .messages li.success { background: #ecfdf3; color: #065f46; }
+    .messages li.error { background: #fef2f2; color: #b91c1c; }
+    .messages li.warning { background: #fff7ed; color: #c2410c; }
+    .filter-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
+    .tag-pill { display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .55rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
+    .tag-pill input { display: none; }
+    .tag-pill.checked { border-color: #4338ca; background: var(--pill); color: var(--pill-text); }
   </style>
-</head>
-<body>
-  <p><a href="{% url 'project_list' %}">&larr; Retour aux projets</a></p>
-  <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
-      <h1>{{ project.name }} — Phase 1 : Datasets</h1>
-      <div class="btn-group">
-          <a href="{% url 'datasets' %}" class="btn" style="text-decoration: none; background: #455a64;">Gérer les datasets</a>
-          <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="text-decoration: none;">Analyser le projet &rarr;</a>
-          <a href="{% url 'project_stage2' project.id %}" class="btn" style="text-decoration: none; background: #3949ab;">Stage2 – Partage &rarr;</a>
-          <a href="{% url 'project_stage3' project.id %}" class="btn" style="text-decoration: none; background: #0d47a1;">Stage3 – Communauté &rarr;</a>
-      </div>
-  </div>
 
   {% if messages %}
     <ul class="messages">
@@ -45,122 +31,156 @@
     </ul>
   {% endif %}
 
-  <div class="grid">
-    <div class="card">
-      <h2>Ajouter un membre</h2>
-      <form method="post" action="{% url 'member_create' project.id %}">
-        {% csrf_token %}
-        <label>Nom</label>
-        <input class="input" type="text" name="name" required>
-
-        <label>Utilité (optionnel)</label>
-        <input class="input" type="text" name="utility" placeholder="Bureau, magasin, serveur…">
-
-        <label>Dataset</label>
-        <select name="dataset" class="input" required>
-          <option value="" disabled selected>Choisissez un dataset</option>
-          {% for dataset in datasets %}
-            <option value="{{ dataset.id }}">{{ dataset.name }}</option>
-          {% endfor %}
-        </select>
-        <p class="muted">Chaque membre pointe vers un dataset normalisé (index mois/semaine/jour/quarter).</p>
-
-        <label>Total conso. annuelle (kWh) – optionnel</label>
-        <input class="input" step="0.01" min="0" type="number" name="annual_consumption_kwh" placeholder="Auto rempli si vide">
-
-        <label>Total prod. annuelle (kWh) – optionnel</label>
-        <input class="input" step="0.01" min="0" type="number" name="annual_production_kwh" placeholder="Auto rempli si vide">
-
-        <label style="margin-top:1rem;">Tags existants</label>
-        <select class="input" name="tags" multiple size="5">
-          {% for tag in all_tags %}
-            <option value="{{ tag.id }}">{{ tag.name }}</option>
-          {% empty %}
-            <option disabled>Aucun tag</option>
-          {% endfor %}
-        </select>
-
-        <label>Créer des tags (séparés par des virgules)</label>
-        <input class="input" type="text" name="new_tags" placeholder="habitation, prosumer">
-
-        <button class="btn" type="submit" style="margin-top:1.5rem; width: 100%;">Créer le membre</button>
-      </form>
-    </div>
-
-    <div class="card">
-      <h2>Membres du projet</h2>
-      <form method="get" action="" style="margin-bottom:.5rem; display:flex; flex-direction:column; gap:.35rem;">
-        <label>Filtrer par tags</label>
-        <select class="input" name="tags" multiple size="4">
-          {% for tag in all_tags %}
-            <option value="{{ tag.name }}" {% if tag.name in selected_tags %}selected{% endif %}>{{ tag.name }}</option>
-          {% empty %}
-            <option disabled>Aucun tag</option>
-          {% endfor %}
-        </select>
-        <div style="display:flex; gap:.5rem; align-items:center;">
-          <button class="btn" type="submit">Appliquer le filtre</button>
-          {% if selected_tags %}<a href="?" class="muted" style="text-decoration:none;">Réinitialiser</a>{% endif %}
-        </div>
-      </form>
-      <table>
-        <thead>
-          <tr><th>Nom</th><th>Dataset</th></tr>
-        </thead>
-        <tbody>
-          {% for m in members %}
-            <tr>
-              <td>
-                <strong>{{ m.name }}</strong><br>
-                {% if m.utility %}<span class="muted">{{ m.utility }}</span>{% endif %}
-                {% with m.tags.all as member_tags %}
-                  {% if member_tags|length %}
-                    <div style="margin-top:.25rem;">
-                      {% for tag in member_tags %}
-                        <span style="display:inline-block;background: {{ tag.color }}; color: #0d47a1; padding:0.2rem 0.55rem; border-radius:8px; margin-right:0.25rem; font-weight:600;">{{ tag.name }}</span>
-                      {% endfor %}
-                    </div>
-                  {% endif %}
-                {% endwith %}
-              </td>
-              <td>
-                {% if m.dataset %}
-                  <div class="file-block">
-                    <strong>{{ m.dataset.name }}</strong>
-                    {% if m.dataset.normalized_file %}
-                      <div><a href="{{ m.dataset.normalized_file.url }}">Excel normalisé</a></div>
-                    {% endif %}
-                    {% if m.dataset.metadata %}
-                      <div class="meta-grid">
-                        <span><strong>Lignes :</strong> {{ m.dataset.metadata.row_count }}</span>
-                        <span><strong>Consommation :</strong> {{ m.dataset.metadata.totals.consumption_kwh|floatformat:0 }} kWh</span>
-                        <span><strong>Production :</strong> {{ m.dataset.metadata.totals.production_kwh|floatformat:0 }} kWh</span>
-                        <span><strong>Granularité :</strong> {% if m.dataset.metadata.granularity_minutes %}{{ m.dataset.metadata.granularity_minutes|floatformat:0 }} min{% else %}—{% endif %}</span>
-                      </div>
-                    {% with m.dataset.tags.all as ds_tags %}
-                      {% if ds_tags|length %}
-                        <div style="margin-top:.35rem;">
-                          {% for tag in ds_tags %}
-                            <span style="display:inline-block;background: {{ tag.color }}; color: #0d47a1; padding:0.2rem 0.55rem; border-radius:8px; margin-right:0.25rem; font-weight:600;">{{ tag.name }}</span>
-                          {% endfor %}
-                        </div>
-                      {% endif %}
-                    {% endwith %}
-                    {% else %}
-                      <span class="muted">Métadonnées indisponibles.</span>
-                    {% endif %}
-                  </div>
-                {% else %}
-                  <span class="muted">Aucun dataset</span>
-                {% endif %}
-              </td>
-            </tr>
-          {% empty %}
-            <tr><td colspan="2" class="muted" style="text-align: center; padding: 2rem;">Aucun membre pour l’instant.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  <div class="card project-hero">
+    <div>
+      <div class="pill" style="width: fit-content;">Phase 1 • Datasets</div>
+      <h1>{{ project.name }}</h1>
+      <p class="muted" style="margin-top:0; max-width: 720px;">Attribuez des datasets tagués aux membres. Les tags viennent du dataset et peuvent être filtrés pour retrouver les bons profils.</p>
+      <div class="project-actions">
+        <a href="{% url 'project_list' %}" class="btn secondary">← Retour</a>
+        <a href="{% url 'datasets' %}" class="btn secondary">Gérer les datasets</a>
+        <a href="{% url 'project_analysis_page' project.id %}" class="btn">Analyser le projet →</a>
+        <a href="{% url 'project_stage2' project.id %}" class="btn" style="background:#4338ca;">Stage 2 →</a>
+        <a href="{% url 'project_stage3' project.id %}" class="btn" style="background:#0d47a1;">Stage 3 →</a>
+      </div>
     </div>
   </div>
-</body>
-</html>
+
+  <div class="project-layout">
+    <div class="card">
+      <div style="display:flex; justify-content: space-between; align-items:center; gap: 1rem; flex-wrap: wrap;">
+        <div>
+          <h2 style="margin: 0;">Membres</h2>
+          <p class="muted" style="margin:.15rem 0 0;">Vue type Notion : filtres par tags multiples et datasets affichés avec leurs métadonnées.</p>
+        </div>
+        <form method="get" action="" style="min-width: 260px;">
+          <label class="muted" style="font-weight: 600;">Filtrer par tags</label>
+          <div class="filter-tags">
+            {% for tag in all_tags %}
+              {% with is_selected=tag.name in selected_tags %}
+                <label class="tag-pill {% if is_selected %}checked{% endif %}">
+                  <input type="checkbox" name="tags" value="{{ tag.name }}" {% if is_selected %}checked{% endif %}>
+                  <span class="chip" style="background: {{ tag.color }}33; border: 1px solid {{ tag.color }};">{{ tag.name }}</span>
+                </label>
+              {% endwith %}
+            {% empty %}
+              <span class="muted">Aucun tag pour le moment.</span>
+            {% endfor %}
+          </div>
+          <div style="display:flex; gap:.5rem; align-items:center; margin-top:.45rem;">
+            <button class="btn" type="submit">Filtrer</button>
+            {% if selected_tags %}<a href="?" class="muted" style="text-decoration:none; font-weight: 600;">Réinitialiser</a>{% endif %}
+          </div>
+        </form>
+      </div>
+
+      <div class="member-list" style="margin-top: 1rem;">
+        {% for m in members %}
+          <div class="member-row">
+            <div>
+              <div style="display:flex; align-items:center; gap:.5rem; flex-wrap: wrap;">
+                <strong style="font-size:1.05rem;">{{ m.name }}</strong>
+                {% if m.utility %}<span class="pill" style="background:#e0f2fe; color:#075985;">{{ m.utility }}</span>{% endif %}
+                {% with m.tags.all as member_tags %}
+                  {% for tag in member_tags %}
+                    <span class="chip" style="background: {{ tag.color }}33; border: 1px solid {{ tag.color }};">{{ tag.name }}</span>
+                  {% endfor %}
+                {% endwith %}
+              </div>
+              {% if m.dataset %}
+                <div style="margin-top:.5rem;">
+                  <div class="muted" style="font-weight: 600;">Dataset</div>
+                  <div style="display:flex; align-items:center; gap:.5rem; flex-wrap: wrap; margin-top:.2rem;">
+                    <strong>{{ m.dataset.name }}</strong>
+                    {% with m.dataset.tags.all as ds_tags %}
+                      {% for tag in ds_tags %}
+                        <span class="chip" style="background: {{ tag.color }}33; border: 1px solid {{ tag.color }};">{{ tag.name }}</span>
+                      {% endfor %}
+                    {% endwith %}
+                  </div>
+                  {% if m.dataset.metadata %}
+                    <div class="meta-grid" style="margin-top:.4rem;">
+                      <span><strong>Lignes :</strong> {{ m.dataset.metadata.row_count }}</span>
+                      <span><strong>Conso :</strong> {{ m.dataset.metadata.totals.consumption_kwh|floatformat:0 }} kWh</span>
+                      <span><strong>Prod :</strong> {{ m.dataset.metadata.totals.production_kwh|floatformat:0 }} kWh</span>
+                      <span><strong>Granularité :</strong> {% if m.dataset.metadata.granularity_minutes %}{{ m.dataset.metadata.granularity_minutes|floatformat:0 }} min{% else %}—{% endif %}</span>
+                    </div>
+                  {% else %}
+                    <p class="muted" style="margin:.35rem 0 0;">Métadonnées indisponibles.</p>
+                  {% endif %}
+                </div>
+              {% else %}
+                <p class="muted" style="margin-top:.5rem;">Aucun dataset relié.</p>
+              {% endif %}
+            </div>
+            <div style="text-align:right; display:flex; flex-direction:column; gap:.4rem; align-items:flex-end; justify-content:center;">
+              {% if m.dataset and m.dataset.normalized_file %}
+                <a href="{{ m.dataset.normalized_file.url }}" class="btn secondary" style="text-decoration:none;">Excel normalisé</a>
+              {% endif %}
+              <span class="muted" style="font-size:.9rem;">Conso annuelle : {{ m.annual_consumption_kwh|default:"—" }}</span>
+            </div>
+          </div>
+        {% empty %}
+          <div class="member-row">
+            <div><strong>Aucun membre pour l’instant.</strong><p class="muted" style="margin:.3rem 0 0;">Ajoutez des membres via le panneau latéral.</p></div>
+            <div></div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card" style="position: sticky; top: 88px;">
+      <h3 style="margin-top:0;">Ajouter un membre</h3>
+      <p class="muted" style="margin-top:.15rem;">Choisissez un dataset tagué et ajoutez des tags complémentaires pour ce membre.</p>
+      <form method="post" action="{% url 'member_create' project.id %}" class="stack">
+        {% csrf_token %}
+        <div>
+          <label>Nom</label>
+          <input class="input" type="text" name="name" placeholder="Boutique A" required>
+        </div>
+        <div>
+          <label>Utilité (optionnel)</label>
+          <input class="input" type="text" name="utility" placeholder="Bureau, magasin, serveur…">
+        </div>
+        <div>
+          <label>Dataset</label>
+          <select name="dataset" class="input" required>
+            <option value="" disabled selected>Choisissez un dataset</option>
+            {% for dataset in datasets %}
+              <option value="{{ dataset.id }}">{{ dataset.name }}</option>
+            {% endfor %}
+          </select>
+          <p class="muted" style="margin:.35rem 0 0;">Chaque membre pointe vers un dataset normalisé (index mois/semaine/jour/quarter).</p>
+        </div>
+        <div class="grid">
+          <div>
+            <label>Total conso. annuelle (kWh) – optionnel</label>
+            <input class="input" step="0.01" min="0" type="number" name="annual_consumption_kwh" placeholder="Auto rempli si vide">
+          </div>
+          <div>
+            <label>Total prod. annuelle (kWh) – optionnel</label>
+            <input class="input" step="0.01" min="0" type="number" name="annual_production_kwh" placeholder="Auto rempli si vide">
+          </div>
+        </div>
+        <div>
+          <label>Tags existants</label>
+          <div class="filter-tags">
+            {% for tag in all_tags %}
+              <label class="tag-pill">
+                <input type="checkbox" name="tags" value="{{ tag.id }}">
+                <span class="chip" style="background: {{ tag.color }}33; border: 1px solid {{ tag.color }};">{{ tag.name }}</span>
+              </label>
+            {% empty %}
+              <span class="muted">Aucun tag pour le moment.</span>
+            {% endfor %}
+          </div>
+        </div>
+        <div>
+          <label>Créer des tags (séparés par des virgules)</label>
+          <input class="input" type="text" name="new_tags" placeholder="habitation, prosumer">
+        </div>
+        <button class="btn" type="submit">Créer le membre</button>
+      </form>
+    </div>
+  </div>
+{% endblock %}

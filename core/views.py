@@ -4,12 +4,11 @@ from django.http import HttpResponseBadRequest, HttpResponse
 from dataclasses import asdict
 from typing import Dict, List
 from django.db.models import Q
-from .models import Project, Member, Dataset, GlobalParameter, StageTwoScenario, Tag
+from .models import Project, Member, Dataset, StageTwoScenario, Tag
 from .forms import (
     ProjectForm,
     MemberForm,
     DatasetForm,
-    GlobalParameterForm,
     StageTwoScenarioForm,
     StageThreeTariffForm,
     CommunityOptimizationForm,
@@ -27,7 +26,6 @@ from .stage3 import (
 from .timeseries import (
     TimeseriesError,
     attach_calendar_index,
-    build_indexed_template,
     build_metadata,
     parse_member_timeseries,
     _normalise_to_reference_year,
@@ -90,14 +88,11 @@ def dataset_list(request):
         datasets = datasets.filter(tags__name__in=selected_tags).distinct()
     if query or selected_tags:
         datasets = datasets.distinct()
-    dataset_form = DatasetForm()
-    dataset_form.fields["tags"].queryset = Tag.objects.all()
     return render(
         request,
         "core/datasets.html",
         {
             "datasets": datasets,
-            "dataset_form": dataset_form,
             "query": query,
             "all_tags": Tag.objects.all(),
             "selected_tags": selected_tags,
@@ -177,58 +172,6 @@ def dataset_create(request):
 
     return redirect("datasets")
 
-# New view for the global parameters page
-def global_parameter_list(request):
-    gp_form = GlobalParameterForm()
-    gp_list = GlobalParameter.objects.all()
-    return render(request, "core/global_parameters.html", {
-        "gp_form": gp_form,
-        "gp_list": gp_list
-    })
-
-
-def template_helper(request):
-    """Provide a simple template and converter for annual 15-minute files."""
-
-    if request.method == "POST":
-        upload = request.FILES.get("timeseries_file")
-        label = request.POST.get("label", "").strip()
-        if not upload:
-            messages.error(request, "Veuillez sélectionner un fichier à convertir.")
-            return redirect("template_helper")
-
-        try:
-            converted = build_indexed_template(upload, label=label or None)
-        except TimeseriesError as exc:
-            messages.error(request, str(exc))
-            return redirect("template_helper")
-
-        buffer = io.StringIO()
-        converted.to_csv(buffer, index=False)
-        buffer.seek(0)
-
-        response = HttpResponse(buffer.getvalue(), content_type="text/csv")
-        filename = slugify(label or upload.name.rsplit(".", 1)[0] or "timeseries")
-        response["Content-Disposition"] = f'attachment; filename="{filename}_indexed.csv"'
-        return response
-
-    example = build_indexed_template(
-        io.StringIO(
-            "Date+Quart time;consumption;injection;label\n"
-            "2024-06-03 00:00;1;0;Bureau A\n"
-            "2024-06-03 00:30;2;0;Bureau A\n"
-            "2024-02-29 00:15;0.5;0.2;Parc solaire\n"
-        )
-    )
-
-    preview = example.head(6).to_dict("records")
-    return render(
-        request,
-        "core/template_helper.html",
-        {"preview_rows": preview},
-    )
-
-
 @require_http_methods(["POST"])
 def project_create(request):
     form = ProjectForm(request.POST)
@@ -303,13 +246,6 @@ def member_create(request, project_id):
 
 
 @require_http_methods(["POST"])
-def global_parameter_create(request):
-    form = GlobalParameterForm(request.POST)
-    if form.is_valid():
-        form.save()
-        return redirect("global_parameters") # Redirect to the new parameters page
-    return HttpResponseBadRequest("Invalid parameter")
-
 def csv_template_timeseries(request):
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="timeseries_template.csv"'
