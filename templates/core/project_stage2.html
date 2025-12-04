@@ -55,6 +55,9 @@
     .chart-card { background:#f9fbff; border-radius:12px; padding:1rem; box-shadow: inset 0 0 0 1px rgba(13,71,161,0.08); }
     .chart-card.wide { grid-column: 1 / -1; }
     .sample-table { font-size:.85rem; }
+    .iteration-summary { display:flex; flex-direction:column; gap:.6rem; margin-top:.75rem; }
+    .iteration-bar { height: 16px; border-radius: 999px; overflow: hidden; display:flex; background:#e8eaf6; box-shadow: inset 0 0 0 1px rgba(13,71,161,0.12); }
+    .iteration-bar__segment { height:100%; }
     @media (max-width: 720px) {
       .form-grid { grid-template-columns: 1fr; }
       .scenario-header { flex-direction: column; align-items: flex-start; }
@@ -268,9 +271,10 @@
             </div>
 
             <div class="chart-card wide" style="margin-top:1rem;">
-              <h4 style="margin:.2rem 0 0;">Flux pas de 15 minutes</h4>
-              <p class="muted" style="margin:.25rem 0 .5rem;">Visualisation détaillée de la production, du partage communautaire et de la consommation résiduelle pour chaque pas de 15 minutes.</p>
-              <canvas id="chart-quarterly-{{ card.scenario.id }}" height="320"></canvas>
+              <h4 style="margin:.2rem 0 0;">Itérations sur un pas de 15 minutes</h4>
+              <p class="muted" style="margin:.25rem 0 .5rem;">Vue simplifiée du poids de chaque itération dans l'énergie partagée. La barre reflète la part relative des 3 itérations sans charger tout l'historique.</p>
+              <div id="iteration-bar-{{ card.scenario.id }}" class="iteration-bar"></div>
+              <div id="iteration-summary-{{ card.scenario.id }}" class="iteration-summary"></div>
             </div>
 
             <div class="chart-grid">
@@ -421,34 +425,57 @@
       });
     }
 
+    function renderIterationBar(payload, scenarioId) {
+      const bar = document.getElementById(`iteration-bar-${scenarioId}`);
+      const list = document.getElementById(`iteration-summary-${scenarioId}`);
+      if (!bar || !list || !payload.iteration_chart || !payload.iteration_chart.length) return;
+
+      const total = payload.iteration_chart.reduce((sum, item) => sum + (item.value || 0), 0) || 1;
+      bar.innerHTML = '';
+      list.innerHTML = '';
+
+      payload.iteration_chart.forEach((item, idx) => {
+        const pct = Math.round((item.value / total) * 1000) / 10; // one decimal
+        const seg = document.createElement('div');
+        seg.className = 'iteration-bar__segment';
+        seg.style.width = `${Math.max(pct, 1)}%`;
+        seg.style.background = palette[idx % palette.length];
+        bar.appendChild(seg);
+
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.justifyContent = 'space-between';
+        row.style.gap = '.5rem';
+
+        const label = document.createElement('div');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '.4rem';
+        const dot = document.createElement('span');
+        dot.style.width = '12px';
+        dot.style.height = '12px';
+        dot.style.borderRadius = '50%';
+        dot.style.background = palette[idx % palette.length];
+        const text = document.createElement('span');
+        text.textContent = item.label;
+        label.appendChild(dot);
+        label.appendChild(text);
+
+        const val = document.createElement('strong');
+        val.textContent = `${item.value.toFixed(2)} kWh (${pct.toFixed(1)}%)`;
+
+        row.appendChild(label);
+        row.appendChild(val);
+        list.appendChild(row);
+      });
+    }
+
     function renderCharts(payload, scenarioId) {
       if (!payload.has_data) return;
       const monthLabels = payload.months;
 
-      const quarterCtx = document.getElementById(`chart-quarterly-${scenarioId}`);
-      if (quarterCtx && (payload.quarterly_series || []).length) {
-        const labels = payload.quarterly_series.map(v => v.timestamp);
-        new Chart(quarterCtx, {
-          type: 'line',
-          data: {
-            labels,
-            datasets: [
-              { label: 'Production', data: payload.quarterly_series.map(v => v.production), borderColor: '#1b5e20', backgroundColor: 'rgba(27,94,32,0.1)', tension: 0.25, fill: false },
-              { label: 'Partagée', data: payload.quarterly_series.map(v => v.allocated), borderColor: '#0d47a1', backgroundColor: 'rgba(13,71,161,0.1)', tension: 0.25, fill: false },
-              { label: 'Conso. restante', data: payload.quarterly_series.map(v => v.remaining_consumption), borderColor: '#c62828', backgroundColor: 'rgba(198,40,40,0.1)', tension: 0.25, fill: false },
-            ]
-          },
-          options: {
-            responsive: true,
-            interaction: { mode: 'index', intersect: false },
-            maintainAspectRatio: false,
-            scales: {
-              x: { ticks: { autoSkip: true, maxRotation: 0 }, title: { display: true, text: 'Pas de 15 minutes' } },
-              y: { title: { display: true, text: 'kWh' } }
-            }
-          }
-        });
-      }
+      renderIterationBar(payload, scenarioId);
 
       const monthlyCtx = document.getElementById(`chart-monthly-${scenarioId}`);
       if (monthlyCtx && payload.member_monthly.length) {

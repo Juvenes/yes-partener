@@ -614,17 +614,6 @@ def project_stage2(request, project_id):
         timeline["month_label"] = timeline["month_num"].apply(lambda m: calendar.month_abbr[int(m)])
         timeline["week_num"] = timeline["timestamp"].dt.isocalendar().week.astype(int)
 
-        quarter_series = []
-        for row in timeline.itertuples():
-            quarter_series.append(
-                {
-                    "timestamp": getattr(row, "timestamp").strftime("%Y-%m-%d %H:%M"),
-                    "allocated": float(getattr(row, "community_allocated_kwh", 0.0)),
-                    "production": float(getattr(row, "production_total_kwh", 0.0)),
-                    "remaining_consumption": float(getattr(row, "remaining_consumption_kwh", 0.0)),
-                }
-            )
-
         monthly = (
             timeline.groupby(["month_num", "month_label"])[
                 [
@@ -736,7 +725,6 @@ def project_stage2(request, project_id):
             "member_weekly": member_weekly,
             "iteration_chart": iteration_chart,
             "samples": sample_rows,
-            "quarterly_series": quarter_series,
         }
 
     if timeseries_df is not None and not timeseries_df.empty:

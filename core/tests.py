@@ -37,6 +37,16 @@ class MemberTariffTests(TestCase):
         form = StageThreeTariffForm()
         self.assertEqual(form.fields["supplier_energy_price_eur_per_kwh"].label, "Énergie (fournisseur)")
 
+    def test_member_defaults_match_reference_tariffs(self):
+        member = Member(name="Defaults")
+        self.assertAlmostEqual(member.supplier_energy_price_eur_per_kwh, 0.1308)
+        self.assertAlmostEqual(member.distribution_tariff_eur_per_kwh, 0.1018)
+        self.assertAlmostEqual(member.transport_tariff_eur_per_kwh, 0.0281)
+        self.assertAlmostEqual(member.green_support_eur_per_kwh, 0.0284)
+        self.assertAlmostEqual(member.access_fee_eur_per_kwh, 0.0008)
+        self.assertAlmostEqual(member.special_excise_eur_per_kwh, 0.0142)
+        self.assertAlmostEqual(member.energy_contribution_eur_per_kwh, 0.0019)
+
     def test_baseline_uses_zero_when_missing_timeseries(self):
         project = Project.objects.create(name="Test")
         member = Member.objects.create(project=project, name="Alpha")

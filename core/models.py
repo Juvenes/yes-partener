@@ -66,37 +66,37 @@ class Member(models.Model):
 
     # Stage 3 tariff components (€/kWh)
     supplier_energy_price_eur_per_kwh = models.FloatField(
-        default=0.25,
+        default=0.1308,
         validators=[MinValueValidator(0.0)],
         help_text="Prix énergie facturé par le fournisseur (€/kWh).",
     )
     distribution_tariff_eur_per_kwh = models.FloatField(
-        default=0.05,
+        default=0.1018,
         validators=[MinValueValidator(0.0)],
         help_text="Tarif de distribution (DSO) (€/kWh).",
     )
     transport_tariff_eur_per_kwh = models.FloatField(
-        default=0.02,
+        default=0.0281,
         validators=[MinValueValidator(0.0)],
         help_text="Tarif de transport (TSO) (€/kWh).",
     )
     green_support_eur_per_kwh = models.FloatField(
-        default=0.01,
+        default=0.0284,
         validators=[MinValueValidator(0.0)],
         help_text="Soutien énergie verte (€/kWh).",
     )
     access_fee_eur_per_kwh = models.FloatField(
-        default=0.0,
+        default=0.0008,
         validators=[MinValueValidator(0.0)],
         help_text="Redevance d'accès (€/kWh).",
     )
     special_excise_eur_per_kwh = models.FloatField(
-        default=0.0,
+        default=0.0142,
         validators=[MinValueValidator(0.0)],
         help_text="Accise spéciale (€/kWh).",
     )
     energy_contribution_eur_per_kwh = models.FloatField(
-        default=0.0,
+        default=0.0019,
         validators=[MinValueValidator(0.0)],
         help_text="Contribution énergie (€/kWh).",
     )
