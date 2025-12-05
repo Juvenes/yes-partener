@@ -1,5 +1,31 @@
 from django import forms
+from django.http import QueryDict
+
 from .models import Project, Member, Dataset, StageTwoScenario, Tag
+
+
+def _normalize_decimal_inputs(data, field_names, prefix=""):
+    """Accept both comma and dot decimal separators for numeric fields.
+
+    Browsers configured with a comma decimal separator reject the value before it
+    reaches Django's validation. To avoid blocking user input on Stage 3 forms we
+    rewrite commas to dots for the relevant fields while keeping other values
+    intact.
+    """
+
+    if data is None:
+        return data
+
+    prefix_str = f"{prefix}-" if prefix else ""
+    copied = data.copy() if isinstance(data, QueryDict) else (data.copy() if hasattr(data, "copy") else data)
+
+    for name in field_names:
+        key = f"{prefix_str}{name}"
+        value = copied.get(key)
+        if isinstance(value, str):
+            copied[key] = value.replace(",", ".")
+
+    return copied
 
 class ProjectForm(forms.ModelForm):
     class Meta:
@@ -151,6 +177,10 @@ class StageTwoScenarioForm(forms.ModelForm):
 
 class StageThreeTariffForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
+        data = _normalize_decimal_inputs(kwargs.get("data"), self.Meta.fields, prefix=kwargs.get("prefix") or "")
+        if data is not None:
+            kwargs["data"] = data
+
         super().__init__(*args, **kwargs)
         label_map = {
             "supplier_energy_price_eur_per_kwh": "Énergie (fournisseur)",
@@ -179,7 +209,7 @@ class StageThreeTariffForm(forms.ModelForm):
             "injection_price_eur_per_kwh",
         ]
         widgets = {
-            field: forms.NumberInput(attrs={"step": "0.001", "min": "0"})
+            field: forms.NumberInput(attrs={"step": "0.000001", "min": "0"})
             for field in fields
         }
 
@@ -190,12 +220,27 @@ class CommunityOptimizationForm(forms.Form):
         ("single_building", "Site unique / même bâtiment"),
     ]
 
+    def __init__(self, *args, **kwargs):
+        data = _normalize_decimal_inputs(
+            kwargs.get("data"),
+            [
+                "community_fee_eur_per_kwh",
+                "reduced_distribution_eur_per_kwh",
+                "reduced_transport_eur_per_kwh",
+            ],
+            prefix=kwargs.get("prefix") or "",
+        )
+        if data is not None:
+            kwargs["data"] = data
+
+        super().__init__(*args, **kwargs)
+
     community_fee_eur_per_kwh = forms.FloatField(
         label="communityFee (€/kWh)",
         required=False,
         min_value=0.0,
         initial=0.0,
-        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0"}),
     )
     community_type = forms.ChoiceField(
         label="Type de communauté",
@@ -206,11 +251,11 @@ class CommunityOptimizationForm(forms.Form):
         label="Distribution réduite (€/kWh)",
         required=False,
         min_value=0.0,
-        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0"}),
     )
     reduced_transport_eur_per_kwh = forms.FloatField(
         label="Transport réduit (€/kWh)",
         required=False,
         min_value=0.0,
-        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0"}),
+        widget=forms.NumberInput(attrs={"step": "0.000001", "min": "0"}),
     )
