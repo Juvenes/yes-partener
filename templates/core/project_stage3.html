@@ -74,7 +74,7 @@
     </div>
     <div class="card">
       <p class="muted">Prix moyen de référence</p>
-      <div class="kpi">{{ avg_baseline_cost|floatformat:4 }} €/kWh</div>
+      <div class="kpi">{{ avg_baseline_cost}} €/kWh</div>
       <p class="muted">Prix pondéré par la consommation totale.</p>
     </div>
     {% if optimisation_result and optimisation_result.optimal_price_eur_per_kwh %}
@@ -137,18 +137,18 @@
           </form>
 
           <div style="margin-top:1rem;">
-            <p class="muted">Décomposition (€/kWh) — total hors TVA : <strong>{{ card.tariff.total_unit_price_eur_per_kwh|floatformat:4 }}</strong> ({{ card.tariff.total_unit_price_eur_per_mwh|floatformat:1 }} €/MWh)</p>
+            <p class="muted">Décomposition (€/kWh) — total hors TVA : <strong>{{ card.tariff.total_unit_price_eur_per_kwh}}</strong> ({{ card.tariff.total_unit_price_eur_per_mwh|floatformat:1 }} €/MWh)</p>
             <table>
               <thead><tr><th>Composante</th><th>€/kWh</th></tr></thead>
               <tbody>
-                <tr><td>Énergie (fournisseur)</td><td>{{ card.tariff.supplier_energy_price_eur_per_kwh|floatformat:4 }}</td></tr>
-                <tr><td>Distribution (DSO)</td><td>{{ card.tariff.distribution_tariff_eur_per_kwh|floatformat:4 }}</td></tr>
-                <tr><td>Transport (TSO)</td><td>{{ card.tariff.transport_tariff_eur_per_kwh|floatformat:4 }}</td></tr>
-                <tr><td>Soutien énergie verte</td><td>{{ card.tariff.green_support_eur_per_kwh|floatformat:4 }}</td></tr>
-                <tr><td>Redevance d'accès</td><td>{{ card.tariff.access_fee_eur_per_kwh|floatformat:4 }}</td></tr>
-                <tr><td>Accise spéciale</td><td>{{ card.tariff.special_excise_eur_per_kwh|floatformat:4 }}</td></tr>
-                <tr><td>Contribution énergie</td><td>{{ card.tariff.energy_contribution_eur_per_kwh|floatformat:4 }}</td></tr>
-                <tr><td>Prix d'injection</td><td>{{ card.tariff.injection_price_eur_per_kwh|floatformat:4 }}</td></tr>
+                <tr><td>Énergie (fournisseur)</td><td>{{ card.tariff.supplier_energy_price_eur_per_kwh}}</td></tr>
+                <tr><td>Distribution (DSO)</td><td>{{ card.tariff.distribution_tariff_eur_per_kwh}}</td></tr>
+                <tr><td>Transport (TSO)</td><td>{{ card.tariff.transport_tariff_eur_per_kwh}}</td></tr>
+                <tr><td>Soutien énergie verte</td><td>{{ card.tariff.green_support_eur_per_kwh}}</td></tr>
+                <tr><td>Redevance d'accès</td><td>{{ card.tariff.access_fee_eur_per_kwh}}</td></tr>
+                <tr><td>Accise spéciale</td><td>{{ card.tariff.special_excise_eur_per_kwh}}</td></tr>
+                <tr><td>Contribution énergie</td><td>{{ card.tariff.energy_contribution_eur_per_kwh}}</td></tr>
+                <tr><td>Prix d'injection</td><td>{{ card.tariff.injection_price_eur_per_kwh}}</td></tr>
               </tbody>
             </table>
           </div>
