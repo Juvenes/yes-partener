@@ -44,8 +44,9 @@
       <p class="muted">Décomposez les tarifs par membre, calculez leur facture de référence et optimisez un prix communautaire unique.</p>
     </div>
     <div style="display:flex; gap:.5rem; flex-wrap: wrap;">
-      <a class="btn-secondary btn" href="{% url 'project_detail' project.id %}">Retour phase 1</a>
-      <a class="btn" href="{% url 'project_stage2' project.id %}">Phase 2</a>
+      <a class="btn-secondary btn" href="{% url 'project_detail' project.id %}">Étape 1 · Import membres</a>
+      <a class="btn" href="{% url 'project_stage2' project.id %}">Étape 2 · Clés de partage</a>
+      <a class="btn" style="background:#1b5e20;" href="{% url 'project_analysis_page' project.id %}">Simuler et analyser</a>
     </div>
   </div>
 

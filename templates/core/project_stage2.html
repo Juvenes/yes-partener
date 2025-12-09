@@ -51,9 +51,9 @@
     .warning-box { margin-top: 1.2rem; background: #fff8e1; color: #bf6b00; padding: .85rem 1.1rem; border-radius: 10px; }
     .preview-table { font-size: .85rem; }
     .empty-state { text-align: center; padding: 2rem; color: #607d8b; background: #fff; border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(96, 125, 139, 0.12); margin-top: 1.5rem; }
-    .chart-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-top:1rem; }
+    .chart-grid { display:flex; flex-direction:column; gap:1rem; margin-top:1rem; }
     .chart-card { background:#f9fbff; border-radius:12px; padding:1rem; box-shadow: inset 0 0 0 1px rgba(13,71,161,0.08); }
-    .chart-card.wide { grid-column: 1 / -1; }
+    .chart-card.wide { width: 100%; }
     .sample-table { font-size:.85rem; }
     .iteration-summary { display:flex; flex-direction:column; gap:.6rem; margin-top:.75rem; }
     .iteration-bar { height: 16px; border-radius: 999px; overflow: hidden; display:flex; background:#e8eaf6; box-shadow: inset 0 0 0 1px rgba(13,71,161,0.12); }
@@ -76,9 +76,9 @@
       <p class="muted">Définir les clés de partage pour répartir la production locale entre les membres et suivre les flux restants.</p>
     </div>
     <div class="scenario-actions">
-      <a href="{% url 'project_detail' project.id %}" class="btn-secondary btn">Retour phase 1</a>
-      <a href="{% url 'project_analysis_page' project.id %}" class="btn">Analyse des données</a>
-      <a href="{% url 'project_stage3' project.id %}" class="btn-neutral btn">Phase suivante : Stage 3</a>
+      <a href="{% url 'project_detail' project.id %}" class="btn-secondary btn">Étape 1 · Import membres</a>
+      <a href="{% url 'project_analysis_page' project.id %}" class="btn">Analyse / Simulation</a>
+      <a href="{% url 'project_stage3' project.id %}" class="btn-neutral btn">Étape suivante · Tarifs &amp; optimisation</a>
     </div>
   </div>
 

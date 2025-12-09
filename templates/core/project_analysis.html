@@ -17,6 +17,9 @@
     .btn-primary, .btn-secondary { display: inline-block; padding: .75rem 1.3rem; border-radius: 8px; color: #fff; text-decoration: none; font-weight: 600; }
     .btn-primary { background: #0d47a1; }
     .btn-secondary { background: #5f6c85; }
+    .section-nav { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0 1.5rem; }
+    .section-nav a { padding: .65rem 1.1rem; border-radius: 10px; background: #eef2ff; color: #1a253c; text-decoration: none; font-weight: 700; box-shadow: inset 0 0 0 1px rgba(13,71,161,.1); }
+    .section-nav a:hover { background: #e0e7ff; }
     .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; }
     .meta-chip { background: #eef2ff; border-radius: 10px; padding: .85rem 1rem; box-shadow: inset 0 0 0 1px rgba(52,73,94,.08); }
     .meta-chip strong { display: block; font-size: .8rem; color: #556987; text-transform: uppercase; letter-spacing: .08em; margin-bottom: .35rem; }
@@ -24,7 +27,7 @@
     .kpi-card { background: linear-gradient(145deg, #ffffff, #f6f8ff); border-radius: 14px; padding: 1.75rem; box-shadow: 0 12px 30px rgba(31,61,90,.08); }
     .kpi-value { font-size: 2.5rem; font-weight: 700; color: #1a253c; }
     .kpi-label { font-size: 1rem; color: #6b7c93; margin-top: 0.35rem; }
-    .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 2rem; }
+    .chart-grid { display: flex; flex-direction: column; gap: 2rem; }
     .input-select { padding: .65rem 1rem; border-radius: 8px; border: 1px solid #cfd6e3; font-size: 1rem; }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 0.85rem 0.5rem; border-bottom: 1px solid #e6ecf5; }
@@ -38,15 +41,25 @@
     <div class="header-bar">
       <div class="header-left">
         <a href="{% url 'project_detail' project.id %}" class="btn-back">&larr; Retour au projet</a>
-        <h1>Tableau de bord analytique : {{ project.name }}</h1>
+        <h1>Simulation complète : {{ project.name }}</h1>
+        <p class="muted">Cette page regroupe toutes les analyses en une seule vue, avec les graphiques empilés pour éviter les ralentissements.</p>
       </div>
       <div class="action-buttons">
-        <a href="{% url 'project_stage2' project.id %}" class="btn-secondary">Stage 2 – Partage</a>
-        <a href="{% url 'project_stage3' project.id %}" class="btn-primary">Stage 3 – Communauté</a>
+        <a href="{% url 'project_detail' project.id %}" class="btn-secondary">Étape 1 · Import membres</a>
+        <a href="{% url 'project_stage2' project.id %}" class="btn-secondary">Étape 2 · Clés de partage</a>
+        <a href="{% url 'project_stage3' project.id %}" class="btn-primary">Étape 3 · Tarifs &amp; optimisation</a>
       </div>
     </div>
 
-    <div class="card">
+    <div class="section-nav">
+      <a href="#coverage">Couverture des données</a>
+      <a href="#kpis">Chiffres clés</a>
+      <a href="#monthly">Production vs consommation</a>
+      <a href="#chroniques">Chroniques détaillées</a>
+      <a href="#members">Vue par membre</a>
+    </div>
+
+    <div class="card" id="coverage">
       <h2>Couverture des données</h2>
       <div class="meta-grid">
         <div class="meta-chip">
@@ -76,7 +89,7 @@
       </div>
     </div>
 
-    <h2>Chiffres clés</h2>
+    <h2 id="kpis">Chiffres clés</h2>
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-value">{{ kpis.total_production|floatformat:0 }} kWh</div>
@@ -96,12 +109,12 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top: 2rem;">
+    <div class="card" id="monthly" style="margin-top: 2rem;">
       <h2>Production vs consommation par mois</h2>
       <div id="monthly-chart"></div>
     </div>
 
-    <div class="card" style="margin-top: 2rem;">
+    <div class="card" id="chroniques" style="margin-top: 2rem;">
       <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
         <h2>Exploration détaillée par mois</h2>
         <select id="month-select" class="input-select"></select>
@@ -127,7 +140,7 @@
       </div>
     </div>
 
-    <div class="chart-grid">
+    <div class="chart-grid" id="members">
       <div class="card">
         <h2>Top 5 producteurs</h2>
         <div id="producers-pie"></div>
