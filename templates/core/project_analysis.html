@@ -57,7 +57,17 @@
       <a href="#monthly">Production vs consommation</a>
       <a href="#chroniques">Chroniques détaillées</a>
       <a href="#members">Vue par membre</a>
+      <a href="#impact">Impact communauté</a>
     </div>
+
+    {% if stage2_warnings %}
+      <div class="card" style="border-left:4px solid #f59e0b;">
+        <h3>Notes sur les données de partage</h3>
+        <ul>
+          {% for note in stage2_warnings %}<li class="muted">{{ note }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
 
     <div class="card" id="coverage">
       <h2>Couverture des données</h2>
@@ -87,6 +97,72 @@
           <span>{% if aggregate_metadata.normalized_year %}{{ aggregate_metadata.normalized_year }}{% else %}—{% endif %}</span>
         </div>
       </div>
+    </div>
+
+    <div class="card" id="impact">
+      <div style="display:flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+        <div>
+          <h2>Impact communauté &amp; optimisation</h2>
+          <p class="muted">Visualisez le gain vs baseline, le scénario de partage issu de la phase 2 et les moments où plus de production locale est nécessaire.</p>
+        </div>
+        {% if stage2_scenarios %}
+          <div style="display:flex; flex-direction:column; gap:.25rem; align-items:flex-end;">
+            <span class="meta-chip" style="background:#ecfdf3;">Scénario phase 2 : {% if selected_stage2 %}{{ selected_stage2.name }}{% else %}—{% endif %}</span>
+            {% if community_totals.optimal_price %}
+              <span class="meta-chip" style="background:#eef2ff;">Prix communautaire optimal : {{ community_totals.optimal_price|floatformat:3 }} €/kWh</span>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      {% if not stage2_scenarios %}
+        <p class="muted">Ajoutez un scénario de partage en phase 2 pour projeter un prix communautaire et mesurer les gains.</p>
+      {% else %}
+        <div class="meta-grid" style="margin-top:1rem;">
+          <div class="meta-chip">
+            <strong>Énergie partagée (phase 2)</strong>
+            <span>{% if stage2_evaluation %}{{ stage2_evaluation.total_community_allocation_kwh|floatformat:0 }} kWh{% else %}—{% endif %}</span>
+          </div>
+          <div class="meta-chip">
+            <strong>Coût baseline</strong>
+            <span>{% if community_totals.baseline_cost %}{{ community_totals.baseline_cost|floatformat:2 }} €{% else %}—{% endif %}</span>
+          </div>
+          <div class="meta-chip">
+            <strong>Coût communauté</strong>
+            <span>{% if community_totals.community_cost %}{{ community_totals.community_cost|floatformat:2 }} €{% else %}—{% endif %}</span>
+          </div>
+          <div class="meta-chip">
+            <strong>Économie</strong>
+            <span>{% if community_totals.delta %}+{{ community_totals.delta|floatformat:2 }} €{% else %}—{% endif %}</span>
+          </div>
+        </div>
+
+        <div class="chart-grid" style="margin-top:1.5rem;">
+          <div class="card" style="box-shadow:none; border:1px solid #eef2ff;">
+            <h3>Baseline vs communauté</h3>
+            <div id="impact-costs"></div>
+          </div>
+          <div class="card" style="box-shadow:none; border:1px solid #eef2ff;">
+            <h3>Économies par membre</h3>
+            <div id="member-savings"></div>
+          </div>
+          <div class="card" style="box-shadow:none; border:1px solid #eef2ff;">
+            <h3>Dépendance réseau vs communauté</h3>
+            <div id="coverage-chart"></div>
+          </div>
+        </div>
+
+        <div class="chart-grid" style="margin-top:1.5rem;">
+          <div class="card" style="box-shadow:none; border:1px solid #eef2ff;">
+            <h3>Mois critiques (solde net)</h3>
+            <div id="seasonal-gaps"></div>
+          </div>
+          <div class="card" style="box-shadow:none; border:1px solid #eef2ff;">
+            <h3>Heures critiques (profil net moyen)</h3>
+            <div id="hourly-net"></div>
+          </div>
+        </div>
+      {% endif %}
     </div>
 
     <h2 id="kpis">Chiffres clés</h2>
@@ -198,6 +274,9 @@
     const weeklyMemberConsumption = {{ weekly_member_consumption|default:'[]'|safe }};
     const pieProducers = {{ pie_producers|safe }};
     const pieConsumers = {{ pie_consumers|safe }};
+    const communityTotals = {{ community_totals|default:'{}'|safe }};
+    const memberOutcomeSeries = {{ member_outcome_series|default:'[]'|safe }};
+    const coverageSeries = {{ coverage_series|default:'[]'|safe }};
 
     const monthlyChart = new ApexCharts(document.querySelector('#monthly-chart'), {
       series: [
@@ -391,6 +470,86 @@
       document.querySelector('#consumers-pie'),
       pieOptions('Répartition consommation', safePie(pieConsumers, 'Aucune donnée'))
     ).render();
+
+    const impactCostsEl = document.querySelector('#impact-costs');
+    const memberSavingsEl = document.querySelector('#member-savings');
+    const coverageChartEl = document.querySelector('#coverage-chart');
+    const seasonalGapsEl = document.querySelector('#seasonal-gaps');
+    const hourlyNetEl = document.querySelector('#hourly-net');
+
+    const renderPlaceholder = (el, message) => {
+      if (el) {
+        el.innerHTML = `<p class="muted">${message}</p>`;
+      }
+    };
+
+    if (impactCostsEl) {
+      if (!communityTotals || Object.keys(communityTotals).length === 0) {
+        renderPlaceholder(impactCostsEl, 'Aucune optimisation communautaire n\'a encore été calculée.');
+        renderPlaceholder(memberSavingsEl, 'Ajoutez un scénario de phase 2 pour voir les économies par membre.');
+        renderPlaceholder(coverageChartEl, 'Les imports communauté / réseau seront affichés après optimisation.');
+        renderPlaceholder(seasonalGapsEl, 'Calculez la phase 2 pour visualiser les mois déficitaires.');
+        renderPlaceholder(hourlyNetEl, 'Calculez la phase 2 pour visualiser les heures critiques.');
+      } else {
+        new ApexCharts(impactCostsEl, {
+          series: [
+            { name: 'Baseline', data: [communityTotals.baseline_cost || 0] },
+            { name: 'Communauté', data: [communityTotals.community_cost || 0] }
+          ],
+          chart: { type: 'bar', height: 320, stacked: false, toolbar: { show: false } },
+          plotOptions: { bar: { columnWidth: '40%' } },
+          xaxis: { categories: ['Facturation annuelle'] },
+          dataLabels: { enabled: false },
+          tooltip: { shared: true }
+        }).render();
+
+        const memberLabels = memberOutcomeSeries.map((item) => item.name);
+        new ApexCharts(memberSavingsEl, {
+          series: [{ name: 'Économie (€)', data: memberOutcomeSeries.map((item) => item.delta) }],
+          chart: { type: 'bar', height: 360, toolbar: { show: false } },
+          plotOptions: { bar: { horizontal: true, barHeight: '70%' } },
+          xaxis: { categories: memberLabels, title: { text: '€ économisés vs baseline' } },
+          dataLabels: { enabled: false }
+        }).render();
+
+        new ApexCharts(coverageChartEl, {
+          series: [
+            { name: 'Import communauté', data: coverageSeries.map((item) => item.community) },
+            { name: 'Import réseau', data: coverageSeries.map((item) => item.grid) }
+          ],
+          chart: { type: 'bar', height: 360, stacked: true, toolbar: { show: false } },
+          plotOptions: { bar: { horizontal: true, barHeight: '70%' } },
+          xaxis: { categories: coverageSeries.map((item) => item.name), title: { text: 'kWh' } },
+          dataLabels: { enabled: false },
+          tooltip: { shared: true }
+        }).render();
+
+        new ApexCharts(seasonalGapsEl, {
+          series: [{ name: 'Solde net', data: monthlySeries.net || [] }],
+          chart: { type: 'bar', height: 320, toolbar: { show: false } },
+          plotOptions: {
+            bar: {
+              columnWidth: '55%',
+              colors: { ranges: [{ from: -1e6, to: 0, color: '#ef4444' }, { from: 0, to: 1e6, color: '#10b981' }] },
+            },
+          },
+          dataLabels: { enabled: false },
+          xaxis: { categories: monthlyCategories, title: { text: 'Mois' } },
+          yaxis: { title: { text: 'Solde net (kWh)' } },
+          tooltip: { shared: true }
+        }).render();
+
+        new ApexCharts(hourlyNetEl, {
+          series: [{ name: 'Solde net', data: avgProfileSeries.net || [] }],
+          chart: { type: 'line', height: 320, toolbar: { show: false } },
+          stroke: { curve: 'smooth', width: 2 },
+          dataLabels: { enabled: false },
+          xaxis: { categories: avgProfileCategories, title: { text: 'Heure de la journée' } },
+          yaxis: { title: { text: 'kWh moyen' } },
+          tooltip: { shared: true }
+        }).render();
+      }
+    }
   </script>
 </body>
 </html>
