@@ -44,8 +44,9 @@
       <p class="muted">Décomposez les tarifs par membre, calculez leur facture de référence et optimisez un prix communautaire unique.</p>
     </div>
     <div style="display:flex; gap:.5rem; flex-wrap: wrap;">
-      <a class="btn-secondary btn" href="{% url 'project_detail' project.id %}">Retour phase 1</a>
-      <a class="btn" href="{% url 'project_stage2' project.id %}">Phase 2</a>
+      <a class="btn-secondary btn" href="{% url 'project_detail' project.id %}">Étape 1 · Import membres</a>
+      <a class="btn" href="{% url 'project_stage2' project.id %}">Étape 2 · Clés de partage</a>
+      <a class="btn" style="background:#1b5e20;" href="{% url 'project_analysis_page' project.id %}">Simuler et analyser</a>
     </div>
   </div>
 
@@ -59,6 +60,36 @@
     <ul class="messages">
       {% for warn in load_warnings %}<li class="warning">{{ warn }}</li>{% endfor %}
     </ul>
+  {% endif %}
+
+  {% if not stage2_scenarios %}
+    <ul class="messages">
+      <li class="warning">Créez au moins un scénario en phase 2 pour calculer les coûts communautaires.</li>
+    </ul>
+  {% else %}
+    <form method="get" class="card" style="margin-top:1rem;">
+      <h2>Étape suivante : choisir le scénario de partage (phase 2)</h2>
+      <p class="muted">La phase 3 calcule les prix d'achat/vente sur l'énergie réellement partagée en phase 2. Ajustez la phase 2 puis cliquez sur «&nbsp;Utiliser ce scénario&nbsp;».</p>
+      <div style="display:flex; gap:.75rem; align-items:flex-end; flex-wrap:wrap;">
+        <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.95rem; color:#3949ab;">
+          Scénario phase 2
+          <select name="stage2" style="min-width:220px; padding:.55rem .6rem; border-radius:8px; border:1px solid #cfd8dc;">
+            {% for scenario in stage2_scenarios %}
+              <option value="{{ scenario.id }}" {% if selected_stage2 and scenario.id == selected_stage2.id %}selected{% endif %}>{{ scenario.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="btn" type="submit">Utiliser ce scénario</button>
+        <a class="btn-secondary btn" href="{% url 'project_stage2' project.id %}">Revenir à la phase 2</a>
+      </div>
+      {% if stage2_evaluation %}
+        <div class="muted" style="margin-top:.6rem; display:flex; gap:1rem; flex-wrap:wrap;">
+          <span class="badge">Énergie partagée : {{ stage2_evaluation.total_community_allocation_kwh|floatformat:0 }} kWh</span>
+          <span class="badge">Production restante : {{ stage2_evaluation.total_remaining_production_kwh|floatformat:0 }} kWh</span>
+          <span class="badge">Consommation non servie : {{ stage2_evaluation.total_unserved_consumption_kwh|floatformat:0 }} kWh</span>
+        </div>
+      {% endif %}
+    </form>
   {% endif %}
 
   <section class="grid summary-grid">
@@ -91,6 +122,9 @@
     <p class="muted">Définissez le communityFee, le type de communauté et, le cas échéant, les tarifs réseau réduits pour un site unique.</p>
     <form method="post" action="" class="form-grid" style="margin-top:.8rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem;">
       {% csrf_token %}
+      {% if selected_stage2 %}
+        <input type="hidden" name="stage2" value="{{ selected_stage2.id }}" />
+      {% endif %}
       {% for field in optimisation_form %}
         <label>
           {{ field.label }}

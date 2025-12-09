@@ -43,9 +43,9 @@
       <div class="project-actions">
         <a href="{% url 'project_list' %}" class="btn secondary">← Retour</a>
         <a href="{% url 'datasets' %}" class="btn secondary">Gérer les datasets</a>
-        <a href="{% url 'project_analysis_page' project.id %}" class="btn">Analyser le projet →</a>
-        <a href="{% url 'project_stage2' project.id %}" class="btn" style="background:#4338ca;">Stage 2 →</a>
-        <a href="{% url 'project_stage3' project.id %}" class="btn" style="background:#0d47a1;">Stage 3 →</a>
+        <a href="{% url 'project_stage2' project.id %}" class="btn" style="background:#4338ca;">Étape suivante · Clés de partage</a>
+        <a href="{% url 'project_stage3' project.id %}" class="btn" style="background:#0d47a1;">Étape suivante · Tarifs &amp; optimisation</a>
+        <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="background:#1b5e20;">Simuler &amp; analyser →</a>
       </div>
     </div>
   </div>

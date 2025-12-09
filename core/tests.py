@@ -7,7 +7,7 @@ import pandas as pd
 from .forms import StageThreeTariffForm
 from .models import Dataset, Member, Project, Tag
 from .stage2 import StageTwoIterationConfig, evaluate_sharing
-from .stage3 import build_member_tariffs, compute_baselines
+from .stage3 import build_member_tariffs, compute_baselines, compute_flows_from_stage2
 from .timeseries import build_indexed_template, parse_member_timeseries
 
 
@@ -85,6 +85,47 @@ class StageTwoEqualIterationTests(TestCase):
         self.assertAlmostEqual(allocations["A"], 10.0)
         self.assertAlmostEqual(allocations["B"], 30.0)
         self.assertAlmostEqual(allocations["C"], 60.0)
+
+
+class StageThreeFlowTests(TestCase):
+    def test_flows_follow_stage2_timeline(self):
+        timeline = pd.DataFrame(
+            [
+                {
+                    "member_1_community_kwh": 2.0,
+                    "member_1_external_kwh": 1.0,
+                    "member_1_production_shared_kwh": 2.0,
+                    "member_1_production_unused_kwh": 0.5,
+                    "member_2_community_kwh": 0.0,
+                    "member_2_external_kwh": 3.0,
+                    "member_2_production_shared_kwh": 0.0,
+                    "member_2_production_unused_kwh": 0.0,
+                },
+                {
+                    "member_1_community_kwh": 1.0,
+                    "member_1_external_kwh": 0.0,
+                    "member_1_production_shared_kwh": 1.0,
+                    "member_1_production_unused_kwh": 0.0,
+                    "member_2_community_kwh": 4.0,
+                    "member_2_external_kwh": 0.0,
+                    "member_2_production_shared_kwh": 0.0,
+                    "member_2_production_unused_kwh": 2.0,
+                },
+            ]
+        )
+
+        evaluation = type("Eval", (), {"timeline": timeline})()
+        flows = compute_flows_from_stage2(evaluation, [1, 2])
+
+        self.assertAlmostEqual(flows[1].community_import_kwh, 3.0)
+        self.assertAlmostEqual(flows[1].grid_import_kwh, 1.0)
+        self.assertAlmostEqual(flows[1].community_export_kwh, 3.0)
+        self.assertAlmostEqual(flows[1].grid_export_kwh, 0.5)
+
+        self.assertAlmostEqual(flows[2].community_import_kwh, 4.0)
+        self.assertAlmostEqual(flows[2].grid_import_kwh, 3.0)
+        self.assertAlmostEqual(flows[2].community_export_kwh, 0.0)
+        self.assertAlmostEqual(flows[2].grid_export_kwh, 2.0)
 
 
 class TaggingTests(TestCase):

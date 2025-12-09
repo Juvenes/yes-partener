@@ -22,6 +22,7 @@ from .stage3 import (
     optimise_internal_price,
     build_member_tariffs,
     compute_baselines,
+    compute_flows_from_stage2,
 )
 from .timeseries import (
     TimeseriesError,
@@ -271,6 +272,15 @@ def project_analysis_page(request, project_id):
 
     combined_frames = []
     member_stats = []
+    stage2_scenarios = list(project.stage2_scenarios.all().order_by("name"))
+    selected_stage2 = stage2_scenarios[0] if stage2_scenarios else None
+    stage2_evaluation = None
+    optimisation_result = None
+    community_outcomes = []
+    community_totals = {}
+    member_outcome_series = []
+    coverage_series = []
+    load_warnings: List[str] = []
 
     for member in members:
         dataset = getattr(member, "dataset", None)
@@ -343,6 +353,9 @@ def project_analysis_page(request, project_id):
         'production': [round(val, 3) for val in avg_profile['production_kwh']],
         'consumption': [round(val, 3) for val in avg_profile['consumption_kwh']],
     }
+    avg_profile_series['net'] = [
+        round(p - c, 3) for p, c in zip(avg_profile_series['production'], avg_profile_series['consumption'])
+    ]
 
     monthly_categories = [f"{int(month):02d}" for month in totals_by_month.index]
     monthly_series = {
@@ -445,6 +458,110 @@ def project_analysis_page(request, project_id):
         'autonomy_coverage': (total_production_all / total_consumption_all * 100) if total_consumption_all > 0 else 0.0,
     }
 
+    members_with_series = [
+        member
+        for member in members
+        if getattr(member, "dataset", None) and getattr(member.dataset, "normalized_file", None)
+    ]
+
+    try:
+        timeseries_df, load_warnings = load_stage_two_timeseries(members_with_series)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        timeseries_df = None
+    except Exception as exc:  # pragma: no cover - safety net for UI feedback
+        messages.error(request, f"Impossible de charger les séries temporelles : {exc}")
+        timeseries_df = None
+
+    if stage2_scenarios and timeseries_df is not None and not timeseries_df.empty:
+        selected_id = request.GET.get("stage2")
+        selected_stage2 = next(
+            (scenario for scenario in stage2_scenarios if str(scenario.id) == str(selected_id)),
+            selected_stage2,
+        )
+
+        iteration_payload = build_iteration_configs(
+            selected_stage2.iteration_configs(),
+            members_with_series,
+        )
+        try:
+            stage2_evaluation = evaluate_stage_two(
+                timeseries_df,
+                members_with_series,
+                iteration_payload,
+            )
+        except ValueError as exc:
+            messages.error(request, f"Phase 2 : {exc}")
+
+    tariffs = build_member_tariffs(members)
+    baselines = compute_baselines(timeseries_df, tariffs)
+    flows = None
+    if stage2_evaluation:
+        flows = compute_flows_from_stage2(stage2_evaluation, [t.member_id for t in tariffs])
+
+    optimisation_defaults = CommunityOptimizationForm(prefix="opt")
+    if timeseries_df is not None and not timeseries_df.empty:
+        optimisation_result = optimise_internal_price(
+            tariffs=tariffs,
+            timeseries=timeseries_df,
+            community_fee_eur_per_kwh=optimisation_defaults.fields["community_fee_eur_per_kwh"].initial
+            or 0.0,
+            community_type=optimisation_defaults.fields["community_type"].initial or "public_grid",
+            reduced_distribution=optimisation_defaults.fields["reduced_distribution_eur_per_kwh"].initial,
+            reduced_transport=optimisation_defaults.fields["reduced_transport_eur_per_kwh"].initial,
+            baselines=baselines,
+            flows=flows,
+        )
+
+    if optimisation_result and optimisation_result.member_outcomes:
+        total_baseline_cost = optimisation_result.total_baseline_cost
+        total_community_cost = optimisation_result.total_community_cost
+        community_totals = {
+            "baseline_cost": round(total_baseline_cost, 2),
+            "community_cost": round(total_community_cost, 2),
+            "delta": round(total_baseline_cost - total_community_cost, 2),
+            "optimal_price": optimisation_result.optimal_price_eur_per_kwh,
+            "shared_energy_kwh": getattr(stage2_evaluation, "total_community_allocation_kwh", None),
+        }
+
+        for outcome in optimisation_result.member_outcomes:
+            community_outcomes.append({
+                "name": outcome.name,
+                "baseline_cost": round(outcome.baseline_cost_eur, 2),
+                "community_cost": round(outcome.community_cost_eur, 2),
+                "delta": round(outcome.delta_eur, 2),
+                "savings_pct": round(outcome.savings_pct, 1),
+                "consumption_kwh": round(outcome.consumption_kwh, 2),
+                "community_import_kwh": round(outcome.community_import_kwh, 2),
+                "grid_import_kwh": round(outcome.grid_import_kwh, 2),
+                "community_export_kwh": round(outcome.community_export_kwh, 2),
+                "grid_export_kwh": round(outcome.grid_export_kwh, 2),
+            })
+
+        member_outcome_series = [
+            {
+                "name": outcome["name"],
+                "baseline": outcome["baseline_cost"],
+                "community": outcome["community_cost"],
+                "delta": outcome["delta"],
+            }
+            for outcome in community_outcomes
+        ]
+
+        coverage_series = [
+            {
+                "name": outcome["name"],
+                "coverage": (
+                    (outcome["community_import_kwh"])
+                    / max(outcome["community_import_kwh"] + outcome["grid_import_kwh"], 1e-9)
+                    * 100
+                ),
+                "grid": outcome["grid_import_kwh"],
+                "community": outcome["community_import_kwh"],
+            }
+            for outcome in community_outcomes
+        ]
+
     member_stats_sorted = sorted(
         member_stats,
         key=lambda item: item['metadata'].get('totals', {}).get('consumption_kwh', 0),
@@ -475,6 +592,15 @@ def project_analysis_page(request, project_id):
             "pie_producers": pie_producers,
             "pie_consumers": pie_consumers,
             "kpis": kpis,
+            "stage2_scenarios": stage2_scenarios,
+            "selected_stage2": selected_stage2,
+            "stage2_warnings": load_warnings,
+            "stage2_evaluation": stage2_evaluation,
+            "optimisation_result": optimisation_result,
+            "community_outcomes": community_outcomes,
+            "community_totals": community_totals,
+            "member_outcome_series": member_outcome_series,
+            "coverage_series": coverage_series,
         },
     )
 
@@ -779,6 +905,7 @@ def stage2_scenario_csv(request, scenario_id):
 def project_stage3(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     members = list(project.members.all().order_by("name"))
+    stage2_scenarios = list(project.stage2_scenarios.all().order_by("name"))
     member_forms = {
         member.id: StageThreeTariffForm(instance=member, prefix=f"member-{member.id}")
         for member in members
@@ -789,16 +916,44 @@ def project_stage3(request, project_id):
     baselines = {}
     load_warnings: List[str] = []
     timeseries_df = None
+    stage2_evaluation = None
+    selected_stage2 = stage2_scenarios[0] if stage2_scenarios else None
+    members_with_series = [
+        member for member in members if getattr(member, "dataset", None) and member.dataset.normalized_file
+    ]
 
     try:
-        timeseries_df, load_warnings = load_stage_two_timeseries(members)
+        timeseries_df, load_warnings = load_stage_two_timeseries(members_with_series)
     except ValueError as exc:
         messages.error(request, str(exc))
     except Exception as exc:  # pragma: no cover - safety net for UI feedback
         messages.error(request, f"Impossible de charger les séries temporelles : {exc}")
 
+    if stage2_scenarios and timeseries_df is not None and not timeseries_df.empty:
+        selected_id = request.POST.get("stage2") or request.GET.get("stage2")
+        selected_stage2 = next(
+            (scenario for scenario in stage2_scenarios if str(scenario.id) == str(selected_id)),
+            selected_stage2,
+        )
+
+        iteration_payload = build_iteration_configs(
+            selected_stage2.iteration_configs(),
+            members_with_series,
+        )
+        try:
+            stage2_evaluation = evaluate_stage_two(
+                timeseries_df,
+                members_with_series,
+                iteration_payload,
+            )
+        except ValueError as exc:
+            messages.error(request, f"Phase 2 : {exc}")
+
     tariffs = build_member_tariffs(members)
     baselines = compute_baselines(timeseries_df, tariffs)
+    flows = None
+    if stage2_evaluation:
+        flows = compute_flows_from_stage2(stage2_evaluation, [t.member_id for t in tariffs])
 
     if request.method == "POST" and "optimize" in request.POST:
         optimisation_form = CommunityOptimizationForm(request.POST, prefix="opt")
@@ -817,6 +972,8 @@ def project_stage3(request, project_id):
                     community_type=data.get("community_type") or "public_grid",
                     reduced_distribution=data.get("reduced_distribution_eur_per_kwh"),
                     reduced_transport=data.get("reduced_transport_eur_per_kwh"),
+                    baselines=baselines,
+                    flows=flows,
                 )
         else:
             messages.error(request, "Corrigez les paramètres de la communauté pour lancer l'optimisation.")
@@ -854,6 +1011,9 @@ def project_stage3(request, project_id):
             "total_consumption": total_consumption,
             "avg_baseline_cost": avg_baseline_cost,
             "load_warnings": load_warnings,
+            "stage2_scenarios": stage2_scenarios,
+            "selected_stage2": selected_stage2,
+            "stage2_evaluation": stage2_evaluation,
         },
     )
 
