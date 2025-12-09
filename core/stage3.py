@@ -222,6 +222,38 @@ def compute_flows(timeseries: pd.DataFrame, member_ids: Sequence[int]) -> Dict[i
     return flows
 
 
+def compute_flows_from_stage2(
+    evaluation, member_ids: Sequence[int]
+) -> Dict[int, FlowBreakdown]:
+    """Translate a Stage 2 evaluation timeline into Stage 3 flow breakdowns.
+
+    This keeps Phase 3 strictly aligned with the sharing that was computed in
+    Phase 2: the community import/export and residual grid usage are directly
+    derived from the timeline columns produced by ``evaluate_sharing``.
+    """
+
+    flows: Dict[int, FlowBreakdown] = {member_id: FlowBreakdown(member_id=member_id) for member_id in member_ids}
+    if evaluation is None or getattr(evaluation, "timeline", None) is None:
+        return flows
+
+    timeline = evaluation.timeline
+    if timeline is None or timeline.empty:
+        return flows
+
+    for member_id in member_ids:
+        community_col = f"member_{member_id}_community_kwh"
+        external_col = f"member_{member_id}_external_kwh"
+        shared_col = f"member_{member_id}_production_shared_kwh"
+        unused_col = f"member_{member_id}_production_unused_kwh"
+
+        flows[member_id].community_import_kwh = float(timeline.get(community_col, pd.Series()).sum())
+        flows[member_id].grid_import_kwh = float(timeline.get(external_col, pd.Series()).sum())
+        flows[member_id].community_export_kwh = float(timeline.get(shared_col, pd.Series()).sum())
+        flows[member_id].grid_export_kwh = float(timeline.get(unused_col, pd.Series()).sum())
+
+    return flows
+
+
 def _community_unit_price(
     tariff: MemberTariff,
     *,
@@ -317,11 +349,13 @@ def evaluate_candidate(
 def optimise_internal_price(
     *,
     tariffs: Sequence[MemberTariff],
-    timeseries: pd.DataFrame,
+    timeseries: Optional[pd.DataFrame],
     community_fee_eur_per_kwh: float,
     community_type: str,
     reduced_distribution: Optional[float] = None,
     reduced_transport: Optional[float] = None,
+    baselines: Optional[Dict[int, BaselineResult]] = None,
+    flows: Optional[Dict[int, FlowBreakdown]] = None,
 ) -> Optional[OptimizationSummary]:
     if not tariffs:
         return None
@@ -355,8 +389,10 @@ def optimise_internal_price(
         if candidates[-1] != round(max_supplier, 6):
             candidates.append(round(max_supplier, 6))
 
-    baselines = compute_baselines(timeseries, tariffs)
-    flows = compute_flows(timeseries, [t.member_id for t in tariffs])
+    if baselines is None:
+        baselines = compute_baselines(timeseries, tariffs)
+    if flows is None:
+        flows = compute_flows(timeseries, [t.member_id for t in tariffs])
 
     best_price = None
     best_outcomes: List[CommunityOutcome] = []

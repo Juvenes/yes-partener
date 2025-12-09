@@ -22,6 +22,7 @@ from .stage3 import (
     optimise_internal_price,
     build_member_tariffs,
     compute_baselines,
+    compute_flows_from_stage2,
 )
 from .timeseries import (
     TimeseriesError,
@@ -779,6 +780,7 @@ def stage2_scenario_csv(request, scenario_id):
 def project_stage3(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     members = list(project.members.all().order_by("name"))
+    stage2_scenarios = list(project.stage2_scenarios.all().order_by("name"))
     member_forms = {
         member.id: StageThreeTariffForm(instance=member, prefix=f"member-{member.id}")
         for member in members
@@ -789,16 +791,44 @@ def project_stage3(request, project_id):
     baselines = {}
     load_warnings: List[str] = []
     timeseries_df = None
+    stage2_evaluation = None
+    selected_stage2 = stage2_scenarios[0] if stage2_scenarios else None
+    members_with_series = [
+        member for member in members if getattr(member, "dataset", None) and member.dataset.normalized_file
+    ]
 
     try:
-        timeseries_df, load_warnings = load_stage_two_timeseries(members)
+        timeseries_df, load_warnings = load_stage_two_timeseries(members_with_series)
     except ValueError as exc:
         messages.error(request, str(exc))
     except Exception as exc:  # pragma: no cover - safety net for UI feedback
         messages.error(request, f"Impossible de charger les séries temporelles : {exc}")
 
+    if stage2_scenarios and timeseries_df is not None and not timeseries_df.empty:
+        selected_id = request.POST.get("stage2") or request.GET.get("stage2")
+        selected_stage2 = next(
+            (scenario for scenario in stage2_scenarios if str(scenario.id) == str(selected_id)),
+            selected_stage2,
+        )
+
+        iteration_payload = build_iteration_configs(
+            selected_stage2.iteration_configs(),
+            members_with_series,
+        )
+        try:
+            stage2_evaluation = evaluate_stage_two(
+                timeseries_df,
+                members_with_series,
+                iteration_payload,
+            )
+        except ValueError as exc:
+            messages.error(request, f"Phase 2 : {exc}")
+
     tariffs = build_member_tariffs(members)
     baselines = compute_baselines(timeseries_df, tariffs)
+    flows = None
+    if stage2_evaluation:
+        flows = compute_flows_from_stage2(stage2_evaluation, [t.member_id for t in tariffs])
 
     if request.method == "POST" and "optimize" in request.POST:
         optimisation_form = CommunityOptimizationForm(request.POST, prefix="opt")
@@ -817,6 +847,8 @@ def project_stage3(request, project_id):
                     community_type=data.get("community_type") or "public_grid",
                     reduced_distribution=data.get("reduced_distribution_eur_per_kwh"),
                     reduced_transport=data.get("reduced_transport_eur_per_kwh"),
+                    baselines=baselines,
+                    flows=flows,
                 )
         else:
             messages.error(request, "Corrigez les paramètres de la communauté pour lancer l'optimisation.")
@@ -854,6 +886,9 @@ def project_stage3(request, project_id):
             "total_consumption": total_consumption,
             "avg_baseline_cost": avg_baseline_cost,
             "load_warnings": load_warnings,
+            "stage2_scenarios": stage2_scenarios,
+            "selected_stage2": selected_stage2,
+            "stage2_evaluation": stage2_evaluation,
         },
     )
 
