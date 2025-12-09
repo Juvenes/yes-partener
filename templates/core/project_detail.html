@@ -39,13 +39,12 @@
     <div>
       <div class="pill" style="width: fit-content;">Phase 1 • Datasets</div>
       <h1>{{ project.name }}</h1>
-      <p class="muted" style="margin-top:0; max-width: 720px;">Attribuez des datasets tagués aux membres. Les tags viennent du dataset et peuvent être filtrés pour retrouver les bons profils.</p>
+      <p class="muted" style="margin-top:0; max-width: 720px;">Attribuez des datasets tagués aux membres. Les tags viennent du dataset et peuvent être filtrés pour retrouver les bons profils. Les analyses sont centralisées sur la page finale après la phase 3.</p>
       <div class="project-actions">
         <a href="{% url 'project_list' %}" class="btn secondary">← Retour</a>
         <a href="{% url 'datasets' %}" class="btn secondary">Gérer les datasets</a>
         <a href="{% url 'project_stage2' project.id %}" class="btn" style="background:#4338ca;">Étape suivante · Clés de partage</a>
         <a href="{% url 'project_stage3' project.id %}" class="btn" style="background:#0d47a1;">Étape suivante · Tarifs &amp; optimisation</a>
-        <a href="{% url 'project_analysis_page' project.id %}" class="btn" style="background:#1b5e20;">Simuler &amp; analyser →</a>
       </div>
     </div>
   </div>

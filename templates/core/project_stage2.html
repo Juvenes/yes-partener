@@ -73,11 +73,10 @@
   <div class="header">
     <div>
       <h1>{{ project.name }} — Stage 2 : Partage d'énergie</h1>
-      <p class="muted">Définir les clés de partage pour répartir la production locale entre les membres et suivre les flux restants.</p>
+      <p class="muted">Définir les clés de partage pour répartir la production locale entre les membres et suivre les flux restants. Les analyses globales sont désormais regroupées sur la page «&nbsp;Analyse finale&nbsp;» accessible après la phase 3.</p>
     </div>
     <div class="scenario-actions">
       <a href="{% url 'project_detail' project.id %}" class="btn-secondary btn">Étape 1 · Import membres</a>
-      <a href="{% url 'project_analysis_page' project.id %}" class="btn">Analyse / Simulation</a>
       <a href="{% url 'project_stage3' project.id %}" class="btn-neutral btn">Étape suivante · Tarifs &amp; optimisation</a>
     </div>
   </div>
